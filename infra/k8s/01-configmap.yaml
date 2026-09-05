@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dreamcast-config
+  namespace: dreamcast
+data:
+  APP_NAME: "DreamCast API"
+  APP_ENV: "production"
+  DEBUG: "false"
+  API_V1_PREFIX: "/api/v1"
+  ALLOWED_ORIGINS: '["https://dreamcast.app"]'
+  AI_MODEL_NAME: "claude-sonnet-4-6"
+  IMAGE_PROVIDER_URL: "https://api.stability.ai/v2beta/stable-image/generate/core"
+  PAYMENT_PROVIDER: "stripe"
+  GOOGLE_PLAY_PACKAGE_NAME: "com.dreamcast.app"
+  FREE_TIER_WEEKLY_LIMIT: "1"
+  PRO_TIER_DAILY_LIMIT: "10"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "1440"
+  REFRESH_TOKEN_EXPIRE_DAYS: "30"
+  LOG_LEVEL: "INFO"

@@ -1,0 +1,54 @@
+name: dreamcast
+description: DreamCast — AI dream journal & interpreter.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Networking
+  http: ^1.2.2
+  dio: ^5.7.0
+
+  # State management
+  provider: ^6.1.2
+
+  # Secure local storage for tokens
+  flutter_secure_storage: ^9.2.2
+
+  # Google Play Billing (in-app subscriptions)
+  in_app_purchase: ^3.2.0
+  in_app_purchase_android: ^0.3.6+9
+
+  # Speech-to-text for recording dreams by voice
+  speech_to_text: ^7.0.0
+
+  # Push notifications (morning "log your dream" nudge)
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^18.0.1
+
+  # Sharing the Dream Card
+  share_plus: ^10.0.2
+  screenshot: ^3.0.0
+
+  # UI polish
+  google_fonts: ^6.2.1
+  cached_network_image: ^3.4.1
+  lottie: ^3.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/animations/

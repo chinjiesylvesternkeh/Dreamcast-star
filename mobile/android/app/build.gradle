@@ -1,0 +1,77 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services" // required for Firebase push notifications
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader("UTF-8") { reader -> localProperties.load(reader) }
+}
+
+// --- Release signing config ---
+// Create android/key.properties (NEVER commit it) with:
+//   storePassword=...
+//   keyPassword=...
+//   keyAlias=upload
+//   storeFile=/absolute/path/to/upload-keystore.jks
+// Generate the keystore once with:
+//   keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA \
+//     -keysize 2048 -validity 10000 -alias upload
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace "com.dreamcast.app"
+    compileSdk 35
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId "com.dreamcast.app"
+        minSdkVersion 23          // Android 6.0 — required floor for Play Billing v6+
+        targetSdkVersion 35
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Uses the real upload key once key.properties is filled in;
+            // falls back to debug signing so `flutter build` doesn't break
+            // before you've generated a keystore.
+            signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+flutter {
+    source "../.."
+}

@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dreamcast
+          POSTGRES_PASSWORD: dreamcast
+          POSTGRES_DB: dreamcast_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: |
+          ruff check app
+          black --check app
+
+      - name: Run tests
+        env:
+          DATABASE_URL: sqlite:///./test.db
+        run: pytest tests/ -v --cov=app --cov-report=term
+
+      - name: Build Docker image (build-only, no push on PRs)
+        run: docker build -t dreamcast-backend:ci .
+
+  # Runs only on merges to main. Requires these repo secrets:
+  #   GCP_SA_KEY, GCP_PROJECT, GKE_CLUSTER, GKE_ZONE, KUBE_CONFIG_DATA
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io --quiet
+
+      - name: Build & push image
+        run: |
+          IMAGE="gcr.io/${{ secrets.GCP_PROJECT }}/dreamcast-backend:${{ github.sha }}"
+          docker build -t "$IMAGE" -t "gcr.io/${{ secrets.GCP_PROJECT }}/dreamcast-backend:latest" backend
+          docker push "$IMAGE"
+          docker push "gcr.io/${{ secrets.GCP_PROJECT }}/dreamcast-backend:latest"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_ZONE }}
+
+      - name: Apply manifests & roll out
+        run: |
+          kubectl apply -f infra/k8s/00-namespace.yaml
+          kubectl apply -f infra/k8s/01-configmap.yaml
+          kubectl apply -f infra/k8s/03-postgres.yaml
+          kubectl apply -f infra/k8s/04-redis.yaml
+          kubectl apply -f infra/k8s/05-backend-deployment.yaml
+          kubectl apply -f infra/k8s/06-hpa.yaml
+          kubectl apply -f infra/k8s/07-ingress.yaml
+          kubectl apply -f infra/k8s/08-pdb.yaml
+          kubectl set image deployment/dreamcast-backend backend=${{ env.IMAGE }} -n dreamcast
+          kubectl rollout status deployment/dreamcast-backend -n dreamcast --timeout=180s

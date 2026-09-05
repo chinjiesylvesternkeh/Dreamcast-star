@@ -1,0 +1,74 @@
+# NOTE: This in-cluster Postgres is convenient to get started, but for a
+# real production deployment on GKE, prefer Google Cloud SQL for Postgres
+# (managed backups, HA, no PVC to babysit) and just point DATABASE_URL at
+# it via the Secret instead. This manifest is provided so the whole stack
+# is runnable end-to-end without any external managed services.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dreamcast-postgres
+  namespace: dreamcast
+spec:
+  serviceName: dreamcast-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dreamcast-postgres
+  template:
+    metadata:
+      labels:
+        app: dreamcast-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: dreamcast
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dreamcast-secrets
+                  key: POSTGRES_PASSWORD
+                  optional: true
+            - name: POSTGRES_DB
+              value: dreamcast
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "dreamcast"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dreamcast-postgres
+  namespace: dreamcast
+spec:
+  selector:
+    app: dreamcast-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None

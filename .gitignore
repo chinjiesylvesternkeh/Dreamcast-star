@@ -1,0 +1,42 @@
+# --- Secrets (never commit these) ---
+.env
+*.env
+backend/.env
+**/key.properties
+**/*-service-account*.json
+**/upload-keystore.jks
+infra/k8s/02-secret.yaml
+!infra/k8s/02-secret.yaml.example
+
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+htmlcov/
+.coverage
+
+# --- Flutter / mobile ---
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/google-services.json
+mobile/ios/Flutter/Flutter.podspec
+mobile/*.iml
+mobile/.idea/
+
+# --- Docker ---
+*.log
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/

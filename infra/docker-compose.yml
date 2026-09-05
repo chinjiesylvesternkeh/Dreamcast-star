@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dreamcast-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dreamcast
+      POSTGRES_PASSWORD: dreamcast
+      POSTGRES_DB: dreamcast
+    ports:
+      - "5432:5432"
+    volumes:
+      - dreamcast_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dreamcast"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dreamcast-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: dreamcast-backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql://dreamcast:dreamcast@postgres:5432/dreamcast
+      REDIS_URL: redis://redis:6379/0
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker
+             --bind 0.0.0.0:8000 --access-logfile - --error-logfile -"
+
+volumes:
+  dreamcast_pgdata:

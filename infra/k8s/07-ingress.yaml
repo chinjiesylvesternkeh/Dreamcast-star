@@ -1,0 +1,66 @@
+# Requires an Ingress controller (e.g. GKE Ingress or ingress-nginx) and
+# cert-manager installed in the cluster for automatic TLS certs. If you're
+# on GKE, you can alternatively use a ManagedCertificate + GKE Ingress —
+# see the commented block at the bottom for that variant.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dreamcast-ingress
+  namespace: dreamcast
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  tls:
+    - hosts:
+        - api.dreamcast.app
+      secretName: dreamcast-tls
+  rules:
+    - host: api.dreamcast.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dreamcast-backend
+                port:
+                  number: 80
+
+---
+# --- GKE-native alternative (use instead of the Ingress above if you're
+# deploying to Google Kubernetes Engine and prefer a Google-managed cert) ---
+#
+# apiVersion: networking.gke.io/v1
+# kind: ManagedCertificate
+# metadata:
+#   name: dreamcast-cert
+#   namespace: dreamcast
+# spec:
+#   domains:
+#     - api.dreamcast.app
+# ---
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: dreamcast-ingress-gke
+#   namespace: dreamcast
+#   annotations:
+#     kubernetes.io/ingress.class: "gce"
+#     networking.gke.io/managed-certificates: "dreamcast-cert"
+#     kubernetes.io/ingress.global-static-ip-name: "dreamcast-ip"
+# spec:
+#   rules:
+#     - host: api.dreamcast.app
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: dreamcast-backend
+#                 port:
+#                   number: 80

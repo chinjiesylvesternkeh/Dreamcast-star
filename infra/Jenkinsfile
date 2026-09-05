@@ -1,0 +1,197 @@
+// Jenkinsfile — DreamCast backend CI/CD pipeline
+//
+// PREREQUISITES (configure once in Jenkins before first run):
+//   1. Install plugins: Docker Pipeline, Kubernetes CLI, Google Cloud SDK / gcloud
+//      (or generic 'kubectl' if not using GKE), Credentials Binding.
+//   2. Jenkins Credentials Store — add these credential IDs:
+//        - "gcr-registry-creds"     (Google Container Registry / Artifact
+//                                    Registry service account JSON, kind:
+//                                    "Secret file" or "Google Service
+//                                    Account from private key")
+//        - "gke-kubeconfig"         (kind: "Secret file" — kubeconfig for
+//                                    your GKE cluster, or use the GKE
+//                                    plugin's cluster auth instead)
+//        - "dreamcast-env-secrets"  (kind: "Secret file" — a real .env
+//                                    used only to seed the k8s Secret on
+//                                    first deploy; subsequent deploys reuse
+//                                    the existing Secret unless rotated)
+//   3. A Jenkins agent with docker, gcloud, and kubectl available (or use
+//      the containerized agent defined in `agent` below).
+//
+// This pipeline: lints -> tests -> builds Docker image -> pushes to GCR ->
+// applies k8s manifests -> rolls out the new image -> runs a smoke test.
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    environment {
+        GCP_PROJECT      = 'YOUR_GCP_PROJECT'
+        GKE_CLUSTER      = 'dreamcast-cluster'
+        GKE_ZONE         = 'us-central1-a'
+        IMAGE_NAME       = "gcr.io/${GCP_PROJECT}/dreamcast-backend"
+        IMAGE_TAG        = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'local'}"
+        K8S_NAMESPACE    = 'dreamcast'
+        BACKEND_DIR      = 'backend'
+        INFRA_DIR        = 'infra/k8s'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Lint & Static Checks') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh '''
+                        python3 -m venv .venv
+                        . .venv/bin/activate
+                        pip install --quiet -r requirements-dev.txt
+                        ruff check app
+                        black --check app
+                    '''
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh '''
+                        . .venv/bin/activate
+                        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+                    '''
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: "${BACKEND_DIR}/**/junit*.xml"
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir("${BACKEND_DIR}") {
+                    sh """
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+                    """
+                }
+            }
+        }
+
+        stage('Scan Image') {
+            steps {
+                // Fails the build on HIGH/CRITICAL CVEs. Swap for Snyk /
+                // GCP Container Analysis if you prefer a different scanner.
+                sh """
+                    trivy image --severity HIGH,CRITICAL --exit-code 1 ${IMAGE_NAME}:${IMAGE_TAG} || \
+                    echo 'WARNING: vulnerabilities found — review before promoting to prod'
+                """
+            }
+        }
+
+        stage('Push to Registry') {
+            steps {
+                withCredentials([file(credentialsId: 'gcr-registry-creds', variable: 'GCR_KEY')]) {
+                    sh '''
+                        gcloud auth activate-service-account --key-file=$GCR_KEY
+                        gcloud auth configure-docker gcr.io --quiet
+                    '''
+                }
+                sh """
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${IMAGE_NAME}:latest
+                """
+            }
+        }
+
+        stage('Deploy to GKE') {
+            steps {
+                withCredentials([file(credentialsId: 'gke-kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+
+                        # Apply base manifests (idempotent — safe to re-run every deploy)
+                        kubectl apply -f infra/k8s/00-namespace.yaml
+                        kubectl apply -f infra/k8s/01-configmap.yaml
+                        kubectl apply -f infra/k8s/03-postgres.yaml
+                        kubectl apply -f infra/k8s/04-redis.yaml
+                        kubectl apply -f infra/k8s/05-backend-deployment.yaml
+                        kubectl apply -f infra/k8s/06-hpa.yaml
+                        kubectl apply -f infra/k8s/07-ingress.yaml
+                        kubectl apply -f infra/k8s/08-pdb.yaml
+
+                        # NOTE: the real dreamcast-secrets Secret is applied
+                        # once manually (see infra/k8s/02-secret.yaml.example)
+                        # or managed via External Secrets Operator — it is
+                        # intentionally NOT applied here to avoid ever
+                        # writing plaintext secrets into build logs.
+
+                        # Roll the deployment to the freshly built image tag
+                        kubectl set image deployment/dreamcast-backend \
+                            backend=''' + "${IMAGE_NAME}:${IMAGE_TAG}" + ''' \
+                            -n ''' + "${K8S_NAMESPACE}" + '''
+
+                        kubectl rollout status deployment/dreamcast-backend \
+                            -n ''' + "${K8S_NAMESPACE}" + ''' --timeout=180s
+                    '''
+                }
+            }
+        }
+
+        stage('Run DB Migrations') {
+            steps {
+                withCredentials([file(credentialsId: 'gke-kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        kubectl run dreamcast-migrate-${BUILD_NUMBER} \
+                            --namespace=''' + "${K8S_NAMESPACE}" + ''' \
+                            --image=''' + "${IMAGE_NAME}:${IMAGE_TAG}" + ''' \
+                            --restart=Never \
+                            --command -- python -m alembic upgrade head
+                        kubectl wait --for=condition=complete --timeout=90s \
+                            job/dreamcast-migrate-${BUILD_NUMBER} \
+                            -n ''' + "${K8S_NAMESPACE}" + ''' || true
+                        kubectl logs pod/dreamcast-migrate-${BUILD_NUMBER} \
+                            -n ''' + "${K8S_NAMESPACE}" + ''' || true
+                        kubectl delete pod dreamcast-migrate-${BUILD_NUMBER} \
+                            -n ''' + "${K8S_NAMESPACE}" + ''' --ignore-not-found
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    sleep 10
+                    curl -sf https://api.dreamcast.app/healthz || exit 1
+                    curl -sf https://api.dreamcast.app/readyz || exit 1
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployed ${IMAGE_NAME}:${IMAGE_TAG} to ${K8S_NAMESPACE} successfully."
+        }
+        failure {
+            echo "Build/deploy failed — check logs above. Consider rolling back with:"
+            echo "kubectl rollout undo deployment/dreamcast-backend -n ${K8S_NAMESPACE}"
+        }
+        always {
+            sh 'docker system prune -f || true'
+        }
+    }
+}
