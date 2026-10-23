@@ -39,7 +39,7 @@ if (isReleaseTask && !keystorePropertiesFile.exists()) {
 
 android {
     namespace "com.dreamcast.app"
-    compileSdk 35
+    compileSdk 36
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -53,8 +53,8 @@ android {
 
     defaultConfig {
         applicationId "com.dreamcast.app"
-        minSdkVersion 23          // Android 6.0 — required floor for Play Billing v6+
-        targetSdkVersion 35
+        minSdkVersion 23          // Android 6.0 — required floor for Play Billing
+        targetSdkVersion 36       // Google Play requires API 36 for new apps/updates from 31 Aug 2026
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }

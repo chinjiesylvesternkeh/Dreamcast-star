@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
+import '../config.dart';
 import '../theme.dart';
 import '../widgets/mystic.dart';
 
@@ -179,12 +181,49 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  const Reveal(delayMs: 700, child: _LegalNotice()),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LegalNotice extends StatelessWidget {
+  const _LegalNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    const linkStyle = TextStyle(
+      fontSize: 12,
+      color: AppTheme.textSecondary,
+      decoration: TextDecoration.underline,
+    );
+    void open(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          'By continuing you agree to our ',
+          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8)),
+        ),
+        GestureDetector(
+          onTap: () => open(AppConfig.termsUrl),
+          child: const Text('Terms of Service', style: linkStyle),
+        ),
+        Text(' and ', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8))),
+        GestureDetector(
+          onTap: () => open(AppConfig.privacyPolicyUrl),
+          child: const Text('Privacy Policy', style: linkStyle),
+        ),
+        Text('.', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8))),
+      ],
     );
   }
 }

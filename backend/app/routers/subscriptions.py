@@ -1,19 +1,20 @@
+import base64
 import hmac
+import json
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.config import get_settings
 from app.core.deps import get_current_user
 from app.database import get_db
-from app.plans import PAID_PLANS, PLANS, expire_if_lapsed, plan_for
-from app.services import flutterwave
+from app.plans import FREE, PAID_PLANS, plan_for, plan_for_product, refresh_if_lapsed
 from app.services.payment_service import (
-    compute_period_end,
+    GooglePlayProvider,
+    SubscriptionInactive,
     get_payment_provider,
 )
 
@@ -100,120 +101,31 @@ def my_subscription(
 ):
     if not user.subscription:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No subscription record")
-    expire_if_lapsed(db, user.subscription)
+    refresh_if_lapsed(db, user.subscription)
     return _subscription_out(user.subscription)
 
 
 @router.get("/plans", response_model=list[schemas.PlanOut])
 def list_plans():
-    """Paid plans in display order. The mobile paywall renders exactly this."""
+    """Paid plans in display order, with the Play product id that sells each.
+
+    The app shows Google Play's localized price for each product; price_usd
+    is only the Play Console base price, used as a fallback label.
+    """
     return [
         schemas.PlanOut(
             id=plan.id,
             name=plan.name,
-            price_xaf=plan.price_xaf,
+            product_id=plan.product_id,
+            price_usd=plan.price_usd,
             tagline=plan.tagline,
             features=list(plan.features),
             daily_limit=plan.daily_limit,
             weekly_limit=plan.weekly_limit,
             highlight=plan.highlight,
-            auto_renews=bool(flutterwave.payment_plan_id(plan)),
         )
         for plan in PAID_PLANS
     ]
-
-
-@router.post("/flutterwave/checkout", response_model=schemas.CheckoutSessionResponse)
-def flutterwave_checkout(
-    payload: schemas.FlutterwaveCheckoutRequest,
-    request: Request,
-    user: models.User = Depends(get_current_user),
-):
-    plan = PLANS.get(payload.plan)
-    if plan is None or not plan.is_paid:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown plan")
-    if not flutterwave.is_configured():
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Payments are not available yet. Please try again later.",
-        )
-    redirect_url = settings.FLW_REDIRECT_URL or str(request.url_for("flutterwave_return"))
-    try:
-        link = flutterwave.create_payment_link(user, plan, redirect_url)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Flutterwave checkout failed for %s: %s", user.id, exc)
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, "Couldn't start the payment. Please try again."
-        )
-    return schemas.CheckoutSessionResponse(checkout_url=link, provider="flutterwave")
-
-
-_RETURN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>DreamCast</title>
-<style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#07060F;
-color:#F1EDFF;font-family:Georgia,serif;text-align:center;padding:24px;box-sizing:border-box}}
-h1{{font-weight:500;font-size:30px;margin:16px 0 8px}}p{{color:#9C95BC;font-family:system-ui,sans-serif;
-line-height:1.5;max-width:340px;margin:0 auto}}.moon{{font-size:44px;color:#E9C98B}}</style></head>
-<body><main><div class="moon">&#9790;</div><h1>{title}</h1><p>{body}</p></main></body></html>"""
-
-
-@router.get("/flutterwave/return", response_class=HTMLResponse, name="flutterwave_return")
-def flutterwave_return(
-    transaction_id: str | None = None,
-    db: Session = Depends(get_db),
-):
-    """Where Flutterwave sends the browser after checkout."""
-    subscription = None
-    if transaction_id and flutterwave.is_configured():
-        try:
-            subscription = flutterwave.apply_transaction(
-                db, flutterwave.verify_transaction(transaction_id)
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Flutterwave verification failed for %s: %s", transaction_id, exc)
-
-    if subscription is not None:
-        plan = plan_for(subscription)
-        title = f"Welcome to {plan.name}"
-        body = "Your payment is confirmed and your plan is active. You can return to DreamCast now."
-    else:
-        title = "Payment not completed"
-        body = (
-            "We couldn't confirm a payment. If money left your account, it will "
-            "be applied automatically within a few minutes — otherwise, try again from the app."
-        )
-    return HTMLResponse(_RETURN_PAGE.format(title=title, body=body))
-
-
-@router.post("/webhook/flutterwave")
-async def flutterwave_webhook(
-    request: Request,
-    db: Session = Depends(get_db),
-    verif_hash: str = Header(default="", alias="verif-hash"),
-):
-    """Point Flutterwave Dashboard > Settings > Webhooks at this URL."""
-    if not settings.FLW_WEBHOOK_SECRET or not hmac.compare_digest(
-        verif_hash, settings.FLW_WEBHOOK_SECRET
-    ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid webhook signature")
-
-    raw_body = await request.body()
-    event = await request.json()
-    event_type = str(event.get("event") or event.get("event.type") or "unknown")
-    db.add(
-        models.PaymentEvent(
-            provider="flutterwave",
-            event_type=event_type,
-            payload=raw_body.decode("utf-8", errors="ignore"),
-        )
-    )
-    db.commit()
-
-    transaction_id = (event.get("data") or {}).get("id")
-    if event_type == "charge.completed" and transaction_id:
-        # Never trust the webhook body itself — re-verify with Flutterwave.
-        flutterwave.apply_transaction(db, flutterwave.verify_transaction(str(transaction_id)))
-    return {"received": True}
 
 
 @router.post("/checkout", response_model=schemas.CheckoutSessionResponse)
@@ -242,27 +154,111 @@ def verify_mobile_purchase(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    provider = get_payment_provider()
+    plan = plan_for_product(payload.product_id)
+    if plan is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown subscription product")
+
+    # A purchase token belongs to one DreamCast account only.
+    owner = (
+        db.query(models.Subscription)
+        .filter(
+            models.Subscription.provider_subscription_id == payload.purchase_token,
+            models.Subscription.user_id != user.id,
+        )
+        .first()
+    )
+    if owner:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This Google Play subscription is linked to another DreamCast account.",
+        )
+
     try:
-        result = provider.verify_mobile_purchase(
+        result = GooglePlayProvider().verify_mobile_purchase(
             payload.purchase_token, payload.product_id
         )
-    except NotImplementedError as exc:
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(exc))
+    except SubscriptionInactive:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This subscription has expired")
+    except RuntimeError as exc:
+        logger.error("Play verification unavailable: %s", exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Purchase verification is unavailable"
+        )
 
     sub = user.subscription
     sub.status = models.SubscriptionStatus.ACTIVE
+    sub.plan = plan.id
     sub.provider = models.SubscriptionProvider.GOOGLE_PLAY
     sub.provider_subscription_id = payload.purchase_token
-    expiry_millis = result.get("expiryTimeMillis")
-    sub.current_period_end = (
-        datetime.fromtimestamp(int(expiry_millis) / 1000, tz=timezone.utc)
-        if expiry_millis
-        else compute_period_end(30)
+    sub.current_period_end = datetime.fromtimestamp(
+        int(result["expiryTimeMillis"]) / 1000, tz=timezone.utc
     )
     db.commit()
     db.refresh(sub)
     return _subscription_out(sub)
+
+
+@router.post("/webhook/google_play")
+async def google_play_notification(
+    request: Request, token: str = "", db: Session = Depends(get_db)
+):
+    """Real-time developer notifications, pushed by Google Cloud Pub/Sub.
+
+    Configure the Pub/Sub push subscription endpoint as
+      https://your-domain.com/api/v1/subscriptions/webhook/google_play?token=<GOOGLE_PLAY_RTDN_TOKEN>
+    The notification only says *which* purchase changed; its state is always
+    re-read from the Google Play Developer API.
+    """
+    if not settings.GOOGLE_PLAY_RTDN_TOKEN or not hmac.compare_digest(
+        token, settings.GOOGLE_PLAY_RTDN_TOKEN
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid notification token")
+
+    envelope = await request.json()
+    try:
+        notification = json.loads(base64.b64decode(envelope["message"]["data"]))
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Malformed Pub/Sub message")
+
+    sub_notification = notification.get("subscriptionNotification") or {}
+    db.add(
+        models.PaymentEvent(
+            provider="google_play",
+            event_type=str(sub_notification.get("notificationType", "test")),
+            payload=json.dumps(notification),
+        )
+    )
+    db.commit()
+
+    purchase_token = sub_notification.get("purchaseToken")
+    product_id = sub_notification.get("subscriptionId", "")
+    subscription = (
+        db.query(models.Subscription)
+        .filter(models.Subscription.provider_subscription_id == purchase_token)
+        .first()
+        if purchase_token
+        else None
+    )
+    if subscription is None:
+        # Test notification, or a purchase the app hasn't verified yet
+        # (the app's own verify call will link it).
+        return {"received": True}
+
+    try:
+        result = GooglePlayProvider().verify_mobile_purchase(purchase_token, product_id)
+    except SubscriptionInactive:
+        subscription.status = models.SubscriptionStatus.FREE
+        subscription.plan = FREE.id
+    else:
+        plan = plan_for_product(product_id)
+        subscription.status = models.SubscriptionStatus.ACTIVE
+        if plan:
+            subscription.plan = plan.id
+        subscription.current_period_end = datetime.fromtimestamp(
+            int(result["expiryTimeMillis"]) / 1000, tz=timezone.utc
+        )
+    db.commit()
+    return {"received": True}
 
 
 @router.post("/webhook/{provider_name}")

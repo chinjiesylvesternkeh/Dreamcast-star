@@ -31,6 +31,10 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
+class SubscriptionInactive(ValueError):
+    """The store reports the subscription has expired (or never existed)."""
+
+
 class PaymentProvider(ABC):
     @abstractmethod
     def create_checkout_session(
@@ -157,11 +161,12 @@ class GooglePlayProvider(PaymentProvider):
             )
             .execute()
         )
+        # A cancelled subscription stays entitled until the end of the period
+        # the user already paid for (Play subscriptions policy), so only the
+        # expiry time decides whether access continues.
         expiry_millis = int(result.get("expiryTimeMillis", "0"))
-        if result.get("cancelReason") is not None or expiry_millis <= int(
-            datetime.now(timezone.utc).timestamp() * 1000
-        ):
-            raise ValueError("Google Play subscription is not active")
+        if expiry_millis <= int(datetime.now(timezone.utc).timestamp() * 1000):
+            raise SubscriptionInactive("Google Play subscription has expired")
         return result
 
 

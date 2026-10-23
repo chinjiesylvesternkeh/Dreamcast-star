@@ -22,8 +22,8 @@ dependencies:
   flutter_secure_storage: ^9.2.2
 
   # Google Play Billing (in-app subscriptions)
-  in_app_purchase: ^3.2.0
-  in_app_purchase_android: ^0.3.6+9
+  in_app_purchase: ^3.2.3
+  in_app_purchase_android: ^0.5.5
 
   # Speech-to-text for recording dreams by voice
   speech_to_text: ^7.0.0

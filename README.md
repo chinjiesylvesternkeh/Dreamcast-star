@@ -1,32 +1,76 @@
-## DreamCast plans (XAF)
+## DreamCast plans (Google Play subscriptions)
 
-The app sells three monthly plans, billed in XAF through Flutterwave
-(MTN MoMo, Orange Money, card). They are served and enforced by the
-FastAPI backend (`backend/app/plans.py` is the single source of truth):
+The Android app sells three monthly auto-renewing subscriptions through
+**Google Play Billing** (required by Play's Payments policy for digital
+subscriptions). Plans are defined in `backend/app/plans.py`, which also
+enforces each plan's limits:
 
-| Plan   | Price / month | Readings        | Depth                                          |
-|--------|---------------|-----------------|------------------------------------------------|
-| Free   | —             | 1 per week      | Standard                                       |
-| Lucid  | XAF 1,000     | 1 per day       | Standard                                       |
-| Mystic | XAF 2,000     | up to 5 per day | In-depth: key symbols + a practical reflection |
-| Oracle | XAF 5,000     | up to 15 per day | Oracle: patterns across recent dreams + a guiding question |
+| Plan   | Play product id            | Base price (USD) | Readings         | Depth |
+|--------|----------------------------|------------------|------------------|-------|
+| Free   | —                          | —                | 1 per week       | Standard |
+| Lucid  | `dreamcast_lucid_monthly`  | US$1.79 / month  | 1 per day        | Standard |
+| Mystic | `dreamcast_mystic_monthly` | US$3.49 / month  | up to 5 per day  | In-depth: key symbols + a practical reflection |
+| Oracle | `dreamcast_oracle_monthly` | US$8.79 / month  | up to 15 per day | Oracle: patterns across recent dreams + a guiding question |
 
-To go live, set in the backend environment:
+USD prices are the former XAF 1,000 / 2,000 / 5,000 converted at ~570 XAF
+per USD. Set them as the base price in Play Console and let Play convert to
+local currencies; the app always shows the localized price Play returns.
 
-- `FLW_SECRET_KEY` — Flutterwave secret key
-- `FLW_WEBHOOK_SECRET` — any random string; paste the same value in
-  Flutterwave Dashboard → Settings → Webhooks → Secret hash
-- Webhook URL: `https://<api-domain>/api/v1/subscriptions/webhook/flutterwave`
-- Optional `FLW_PLAN_ID_LUCID` / `FLW_PLAN_ID_MYSTIC` / `FLW_PLAN_ID_ORACLE`
-  — Flutterwave payment-plan ids. When set, plans renew automatically each
-  month; otherwise each payment buys 30 days with no automatic charge.
+### Play Console setup
 
-Run `make migrate` after deploying (adds the `plan` column).
+1. **Monetize > Products > Subscriptions**: create the three products above,
+   each with an auto-renewing base plan billed monthly (no free trial).
+2. **Users & permissions**: grant a service account "View financial data" and
+   "Manage orders and subscriptions"; set its JSON as
+   `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` on the backend
+   (`PAYMENT_PROVIDER=google_play`).
+3. **Real-time developer notifications**: create a Pub/Sub topic, grant
+   `google-play-developer-notifications@system.gserviceaccount.com` publish
+   rights, add the topic under Monetization setup, and create a push
+   subscription to
+   `https://<api-domain>/api/v1/subscriptions/webhook/google_play?token=<GOOGLE_PLAY_RTDN_TOKEN>`.
+4. Run `make migrate` after deploying.
 
-The Node server documented below (`infra/server.js`) predates this and is
-no longer used by the app.
+### Play policy checklist
+
+Done in the app:
+
+- Google Play Billing only for subscriptions; no external payment links.
+- Play Billing Library 9.1 (`in_app_purchase_android` 0.5.5) — Play requires 8+.
+- `targetSdkVersion 36` — required for new apps/updates since 31 Aug 2026.
+- Paywall shows Play's localized price and period, states auto-renewal and
+  how to cancel before purchase, and links to Play's subscription center,
+  Restore purchases, Terms and Privacy Policy.
+- Purchases are verified server-side before access is granted, then
+  acknowledged; pending payments grant nothing until completed; plan changes
+  replace the existing subscription (upgrade now, downgrade at renewal).
+- Cancelled subscriptions keep access until the paid period ends.
+- In-app account deletion (Account > Delete account) that warns the user to
+  cancel their Play subscription; `DELETE /api/v1/users/me` removes all data.
+- In-app reporting of AI-generated readings (flag icon on a reading);
+  reports land in the `dream_reports` table for review.
+- AI readings are labelled as reflection/entertainment, not medical advice.
+
+Still required in Play Console (cannot be done in code):
+
+- Host a **Privacy Policy** and **Terms of Service** and enter the privacy URL
+  in App content. The app links to `https://dreamcast.app/privacy` and
+  `/terms` by default — override with `--dart-define=PRIVACY_POLICY_URL=...`
+  and `--dart-define=TERMS_URL=...`.
+- **Account deletion URL**: a web page where users can request deletion
+  without the app (App content > Data deletion).
+- **Data safety** form: declare email (account), dream text and audio
+  (voice entry, processed for speech-to-text), purchase history, and that
+  dream text is sent to an AI provider for processing.
+- **Content rating** questionnaire, **target audience** (not designed for
+  children), and **Ads** declaration (no ads).
+- Review the **moderation queue** (`dream_reports`) regularly.
 
 # Payment Backend (Flutterwave — Mobile Money + Card Subscriptions)
+
+> **Legacy — not used by the Android app.** Google Play requires Play
+> Billing for in-app digital subscriptions, so the app no longer links to
+> Flutterwave checkout. This standalone server is kept for reference only.
 
 Minimal Node/Express backend that lets your Android app charge monthly
 subscriptions (normal / premium) via MTN/Orange Mobile Money and cards,

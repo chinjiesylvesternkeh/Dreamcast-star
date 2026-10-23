@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.core.deps import get_current_user
 from app.database import get_db
-from app.plans import Plan, expire_if_lapsed, plan_for
+from app.plans import Plan, plan_for, refresh_if_lapsed
 from app.services.ai_service import interpret_dream
 from app.services.image_service import generate_dream_image
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/dreams", tags=["dreams"])
 
 def _check_rate_limit(db: Session, user: models.User) -> Plan:
     """Enforces the user's plan limits and returns the plan they're on."""
-    expire_if_lapsed(db, user.subscription)
+    refresh_if_lapsed(db, user.subscription)
     plan = plan_for(user.subscription)
 
     if plan.daily_limit is not None:
@@ -113,3 +113,23 @@ def get_dream(
     if not dream:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Dream not found")
     return dream
+
+
+@router.post("/{dream_id}/report", status_code=status.HTTP_201_CREATED)
+def report_dream(
+    dream_id: str,
+    payload: schemas.DreamReportCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Flags an AI-generated reading or image for review."""
+    dream = (
+        db.query(models.Dream)
+        .filter(models.Dream.id == dream_id, models.Dream.user_id == user.id)
+        .first()
+    )
+    if not dream:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dream not found")
+    db.add(models.DreamReport(dream_id=dream.id, reason=payload.reason, details=payload.details))
+    db.commit()
+    return {"reported": True}

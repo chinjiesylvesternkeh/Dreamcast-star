@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../theme.dart';
+import '../widgets/account_sheet.dart';
 import 'history_screen.dart';
 import 'paywall_screen.dart';
 import 'record_dream_screen.dart';
@@ -18,6 +19,26 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
   final _screens = const [RecordDreamScreen(), HistoryScreen()];
+  late final AppState _appState = context.read<AppState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _appState.billingNotice.addListener(_showBillingNotice);
+  }
+
+  @override
+  void dispose() {
+    _appState.billingNotice.removeListener(_showBillingNotice);
+    super.dispose();
+  }
+
+  void _showBillingNotice() {
+    final message = _appState.billingNotice.value;
+    if (message == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    _appState.billingNotice.value = null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,10 +57,24 @@ class _HomeShellState extends State<HomeShell> {
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: _ProPill(
-                  label: appState.isPro ? appState.planId.toUpperCase() : 'PLANS',
-                  onTap: () =>
-                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
+                child: Row(
+                  children: [
+                    _ProPill(
+                      label: appState.isPro ? appState.planId.toUpperCase() : 'PLANS',
+                      onTap: () => Navigator.of(context)
+                          .push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Account',
+                      onPressed: () => showAccountSheet(context),
+                      icon: const Icon(Icons.person_outline, color: AppTheme.textSecondary),
+                      style: IconButton.styleFrom(
+                        side: const BorderSide(color: AppTheme.hairline),
+                        backgroundColor: Colors.white.withValues(alpha: 0.04),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

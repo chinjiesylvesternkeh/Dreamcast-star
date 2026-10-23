@@ -108,9 +108,22 @@ class ApiClient {
     return Dream.fromJson(resp.data);
   }
 
+  /// Flags an AI-generated reading or image for review.
+  /// [reason]: offensive | harmful | inaccurate | image | other
+  Future<void> reportDream(String dreamId, {required String reason, String? details}) async {
+    await _dio.post('/dreams/$dreamId/report', data: {'reason': reason, 'details': details});
+  }
+
   Future<List<Dream>> listDreams({int limit = 50, int offset = 0}) async {
     final resp = await _dio.get('/dreams', queryParameters: {'limit': limit, 'offset': offset});
     return (resp.data as List).map((d) => Dream.fromJson(d)).toList();
+  }
+
+  // ---------- Account ----------
+  /// Permanently deletes the account and all its data, then signs out locally.
+  Future<void> deleteAccount() async {
+    await _dio.delete('/users/me');
+    await logout();
   }
 
   // ---------- Subscriptions ----------
@@ -119,17 +132,10 @@ class ApiClient {
     return SubscriptionStatus.fromJson(resp.data);
   }
 
-  /// Paid plans in display order (Lucid, Mystic, Oracle), priced in XAF.
+  /// Paid plans in display order (Lucid, Mystic, Oracle) with their Play product ids.
   Future<List<Plan>> getPlans() async {
     final resp = await _dio.get('/subscriptions/plans');
     return (resp.data as List).map((p) => Plan.fromJson(p)).toList();
-  }
-
-  /// Starts a Flutterwave checkout (mobile money or card) and returns the
-  /// hosted payment page URL to open in the browser.
-  Future<String> startCheckout(String planId) async {
-    final resp = await _dio.post('/subscriptions/flutterwave/checkout', data: {'plan': planId});
-    return resp.data['checkout_url'] as String;
   }
 
   /// After a successful Google Play purchase, send the purchase token here

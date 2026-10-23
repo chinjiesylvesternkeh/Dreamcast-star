@@ -36,11 +36,15 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
-    <!-- Lets url_launcher open the Flutterwave checkout page in a browser (Android 11+). -->
+    <!-- Package visibility (Android 11+): opening Privacy Policy / Terms / Play
+         subscription links, and finding the speech recognizer for voice entry. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 </manifest>

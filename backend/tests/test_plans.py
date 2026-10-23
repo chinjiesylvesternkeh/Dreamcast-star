@@ -1,51 +1,55 @@
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app import models
 from app.config import get_settings
-from app.services import flutterwave
+from app.routers import subscriptions
+from app.services import payment_service
+from app.services.payment_service import SubscriptionInactive
 
 from tests.conftest import TestingSessionLocal
 from tests.test_auth_and_dreams import signup_and_login
 
-WEBHOOK_SECRET = "test-hash"
+RTDN_TOKEN = "rtdn-test-token"
+
+
+class FakePlay:
+    """Stands in for the Google Play Developer API: token -> expiry (None = expired)."""
+
+    expiries: dict = {}
+
+    def verify_mobile_purchase(self, purchase_token, product_id):
+        expiry = self.expiries.get(purchase_token)
+        if expiry is None or expiry <= datetime.now(timezone.utc):
+            raise SubscriptionInactive("expired")
+        return {"expiryTimeMillis": str(int(expiry.timestamp() * 1000))}
 
 
 @pytest.fixture
-def flw(monkeypatch):
-    """Configures Flutterwave and serves fake verified transactions by id."""
-    settings = get_settings()
-    monkeypatch.setattr(settings, "FLW_SECRET_KEY", "FLWSECK_TEST")
-    monkeypatch.setattr(settings, "FLW_WEBHOOK_SECRET", WEBHOOK_SECRET)
-    transactions = {}
-    monkeypatch.setattr(flutterwave, "verify_transaction", lambda tx_id: transactions[tx_id])
-    return transactions
+def play(monkeypatch):
+    FakePlay.expiries = {}
+    monkeypatch.setattr(subscriptions, "GooglePlayProvider", FakePlay)
+    monkeypatch.setattr(payment_service, "GooglePlayProvider", FakePlay)
+    monkeypatch.setattr(get_settings(), "GOOGLE_PLAY_RTDN_TOKEN", RTDN_TOKEN)
+    return FakePlay.expiries
 
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _user_id(client, token):
-    return client.get("/api/v1/users/me", headers=_auth(token)).json()["id"]
+def _in_days(days):
+    return datetime.now(timezone.utc) + timedelta(days=days)
 
 
-def _transaction(user_id, plan, amount, tx_id="1001", currency="XAF", status="successful"):
-    return {
-        "id": int(tx_id),
-        "tx_ref": flutterwave.build_tx_ref(user_id, plan),
-        "amount": amount,
-        "currency": currency,
-        "status": status,
-    }
-
-
-def _webhook(client, tx_id, secret=WEBHOOK_SECRET):
+def _verify(client, token, purchase_token="tok-1", product_id="dreamcast_mystic_monthly"):
     return client.post(
-        "/api/v1/subscriptions/webhook/flutterwave",
-        json={"event": "charge.completed", "data": {"id": int(tx_id)}},
-        headers={"verif-hash": secret},
+        "/api/v1/subscriptions/verify-mobile-purchase",
+        json={"purchase_token": purchase_token, "product_id": product_id},
+        headers=_auth(token),
     )
 
 
@@ -53,103 +57,164 @@ def _me(client, token):
     return client.get("/api/v1/subscriptions/me", headers=_auth(token)).json()
 
 
-def test_plans_are_priced_in_xaf(client):
+def _rtdn(client, purchase_token, product_id, token=RTDN_TOKEN):
+    notification = {
+        "packageName": "com.dreamcast.app",
+        "subscriptionNotification": {
+            "notificationType": 2,
+            "purchaseToken": purchase_token,
+            "subscriptionId": product_id,
+        },
+    }
+    data = base64.b64encode(json.dumps(notification).encode()).decode()
+    return client.post(
+        f"/api/v1/subscriptions/webhook/google_play?token={token}",
+        json={"message": {"data": data}, "subscription": "projects/x/subscriptions/y"},
+    )
+
+
+def test_plans_map_to_play_products(client):
     plans = client.get("/api/v1/subscriptions/plans").json()
-    assert [(p["id"], p["price_xaf"], p["currency"]) for p in plans] == [
-        ("lucid", 1000, "XAF"),
-        ("mystic", 2000, "XAF"),
-        ("oracle", 5000, "XAF"),
+    assert [(p["id"], p["product_id"], p["price_usd"]) for p in plans] == [
+        ("lucid", "dreamcast_lucid_monthly", "1.79"),
+        ("mystic", "dreamcast_mystic_monthly", "3.49"),
+        ("oracle", "dreamcast_oracle_monthly", "8.79"),
     ]
     assert all(p["features"] for p in plans)
 
 
-def test_new_user_is_on_free_plan(client):
+def test_verified_purchase_activates_its_plan(client, play):
     token = signup_and_login(client)
-    assert _me(client, token)["plan"] == "free"
+    play["tok-1"] = _in_days(30)
 
-
-def test_checkout_unavailable_until_flutterwave_configured(client):
-    token = signup_and_login(client)
-    resp = client.post(
-        "/api/v1/subscriptions/flutterwave/checkout", json={"plan": "mystic"}, headers=_auth(token)
-    )
-    assert resp.status_code == 503
-
-
-def test_checkout_rejects_unknown_plan(client, flw):
-    token = signup_and_login(client)
-    resp = client.post(
-        "/api/v1/subscriptions/flutterwave/checkout", json={"plan": "free"}, headers=_auth(token)
-    )
-    assert resp.status_code == 404
-
-
-def test_webhook_activates_paid_plan_once(client, flw):
-    token = signup_and_login(client)
-    flw["1001"] = _transaction(_user_id(client, token), "mystic", 2000)
-
-    assert _webhook(client, "1001").status_code == 200
-    first = _me(client, token)
-    assert (first["status"], first["plan"], first["provider"]) == ("active", "mystic", "flutterwave")
-
-    # The redirect delivering the same payment must not extend the period again.
-    assert _webhook(client, "1001").status_code == 200
-    assert _me(client, token)["current_period_end"] == first["current_period_end"]
-
-
-def test_return_page_confirms_payment(client, flw):
-    token = signup_and_login(client)
-    flw["1002"] = _transaction(_user_id(client, token), "oracle", 5000, tx_id="1002")
-
-    resp = client.get("/api/v1/subscriptions/flutterwave/return?transaction_id=1002")
+    resp = _verify(client, token, product_id="dreamcast_oracle_monthly")
     assert resp.status_code == 200
-    assert "Welcome to Oracle" in resp.text
-    assert _me(client, token)["plan"] == "oracle"
+    assert (resp.json()["plan"], resp.json()["provider"]) == ("oracle", "google_play")
 
 
-def test_underpayment_is_ignored(client, flw):
+def test_unknown_product_rejected(client, play):
     token = signup_and_login(client)
-    flw["1003"] = _transaction(_user_id(client, token), "oracle", 1000, tx_id="1003")
+    play["tok-1"] = _in_days(30)
+    assert _verify(client, token, product_id="something_else").status_code == 400
 
-    _webhook(client, "1003")
+
+def test_expired_purchase_rejected(client, play):
+    token = signup_and_login(client)
+    assert _verify(client, token).status_code == 400
     assert _me(client, token)["plan"] == "free"
 
 
-def test_webhook_rejects_bad_signature(client, flw):
-    assert _webhook(client, "1001", secret="wrong").status_code == 401
+def test_purchase_token_cannot_unlock_a_second_account(client, play):
+    play["tok-1"] = _in_days(30)
+    first = signup_and_login(client, email="one@example.com")
+    second = signup_and_login(client, email="two@example.com")
+
+    assert _verify(client, first).status_code == 200
+    assert _verify(client, second).status_code == 409
 
 
-def test_paid_plan_daily_limit_enforced(client, flw):
+def test_cancelled_subscription_keeps_access_until_period_end(client, play):
+    # Play still reports a future expiry after cancellation; access must remain.
     token = signup_and_login(client)
-    flw["1004"] = _transaction(_user_id(client, token), "lucid", 1000, tx_id="1004")
-    _webhook(client, "1004")
-
-    first = client.post("/api/v1/dreams", json={"raw_text": "Dream one"}, headers=_auth(token))
-    assert first.status_code == 201
-    second = client.post("/api/v1/dreams", json={"raw_text": "Dream two"}, headers=_auth(token))
-    assert second.status_code == 429
+    play["tok-1"] = _in_days(10)
+    _verify(client, token)
+    assert _rtdn(client, "tok-1", "dreamcast_mystic_monthly").status_code == 200
+    assert _me(client, token)["plan"] == "mystic"
 
 
-def test_deeper_plans_get_longer_readings(client, flw):
+def test_rtdn_expiry_returns_user_to_free(client, play):
     token = signup_and_login(client)
-    flw["1005"] = _transaction(_user_id(client, token), "oracle", 5000, tx_id="1005")
-    _webhook(client, "1005")
+    play["tok-1"] = _in_days(30)
+    _verify(client, token)
+
+    play["tok-1"] = None
+    assert _rtdn(client, "tok-1", "dreamcast_mystic_monthly").status_code == 200
+    me = _me(client, token)
+    assert (me["status"], me["plan"]) == ("free", "free")
+
+
+def test_rtdn_rejects_bad_token(client, play):
+    assert _rtdn(client, "tok-1", "dreamcast_mystic_monthly", token="wrong").status_code == 401
+
+
+def test_lapsed_period_is_rechecked_with_google(client, play):
+    token = signup_and_login(client)
+    play["tok-1"] = _in_days(30)
+    _verify(client, token)
+
+    db = TestingSessionLocal()
+    subscription = db.query(models.Subscription).one()
+    subscription.current_period_end = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    db.close()
+
+    # Renewed at Google: the period is extended rather than dropped.
+    assert _me(client, token)["plan"] == "mystic"
+
+    play["tok-1"] = None
+    db = TestingSessionLocal()
+    subscription = db.query(models.Subscription).one()
+    subscription.current_period_end = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    db.close()
+    assert _me(client, token)["plan"] == "free"
+
+
+def test_paid_plan_daily_limit_enforced(client, play):
+    token = signup_and_login(client)
+    play["tok-1"] = _in_days(30)
+    _verify(client, token, product_id="dreamcast_lucid_monthly")
+
+    assert client.post("/api/v1/dreams", json={"raw_text": "Dream one"}, headers=_auth(token)).status_code == 201
+    assert client.post("/api/v1/dreams", json={"raw_text": "Dream two"}, headers=_auth(token)).status_code == 429
+
+
+def test_deeper_plans_get_longer_readings(client, play):
+    token = signup_and_login(client)
+    play["tok-1"] = _in_days(30)
+    _verify(client, token, product_id="dreamcast_oracle_monthly")
 
     resp = client.post("/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers=_auth(token))
     assert resp.json()["interpretation"].count("\n\n") == 2
 
 
-def test_lapsed_flutterwave_plan_returns_to_free(client, flw):
+def test_user_can_report_a_reading(client):
     token = signup_and_login(client)
-    user_id = _user_id(client, token)
-    flw["1006"] = _transaction(user_id, "mystic", 2000, tx_id="1006")
-    _webhook(client, "1006")
+    dream = client.post("/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers=_auth(token)).json()
 
+    resp = client.post(
+        f"/api/v1/dreams/{dream['id']}/report",
+        json={"reason": "offensive", "details": "Not okay"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
     db = TestingSessionLocal()
-    subscription = db.query(models.Subscription).filter_by(user_id=user_id).one()
-    subscription.current_period_end = datetime.now(timezone.utc) - timedelta(days=3)
-    db.commit()
+    assert db.query(models.DreamReport).count() == 1
     db.close()
 
-    me = _me(client, token)
-    assert (me["status"], me["plan"]) == ("free", "free")
+
+def test_cannot_report_someone_elses_dream(client):
+    owner = signup_and_login(client, email="one@example.com")
+    other = signup_and_login(client, email="two@example.com")
+    dream = client.post("/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers=_auth(owner)).json()
+
+    resp = client.post(
+        f"/api/v1/dreams/{dream['id']}/report", json={"reason": "other"}, headers=_auth(other)
+    )
+    assert resp.status_code == 404
+
+
+def test_account_deletion_removes_all_data(client):
+    token = signup_and_login(client)
+    dream = client.post("/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers=_auth(token)).json()
+    client.post(f"/api/v1/dreams/{dream['id']}/report", json={"reason": "other"}, headers=_auth(token))
+
+    assert client.delete("/api/v1/users/me", headers=_auth(token)).status_code == 204
+
+    db = TestingSessionLocal()
+    assert db.query(models.User).count() == 0
+    assert db.query(models.Dream).count() == 0
+    assert db.query(models.DreamReport).count() == 0
+    assert db.query(models.Subscription).count() == 0
+    db.close()
+    assert client.get("/api/v1/users/me", headers=_auth(token)).status_code == 401

@@ -1,15 +1,20 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
+import '../config.dart';
 import '../models/plan.dart';
+import '../services/billing_service.dart';
 import '../theme.dart';
 import '../widgets/mystic.dart';
 
-/// Plan picker: Lucid, Mystic and Oracle, paid in XAF through Flutterwave
-/// (MTN MoMo, Orange Money or card) in the browser.
+/// Plan picker: Lucid, Mystic and Oracle, sold as Google Play subscriptions.
+///
+/// Follows Play's subscriptions policy: the localized price and billing
+/// period are shown with every offer, auto-renewal and how to cancel are
+/// stated before purchase, and restore / manage-subscription are one tap away.
 class PaywallScreen extends StatefulWidget {
   const PaywallScreen({super.key});
 
@@ -17,82 +22,77 @@ class PaywallScreen extends StatefulWidget {
   State<PaywallScreen> createState() => _PaywallScreenState();
 }
 
-class _PaywallScreenState extends State<PaywallScreen> with WidgetsBindingObserver {
-  late Future<List<Plan>> _futurePlans;
+class _Catalog {
+  final List<Plan> plans;
+  final Map<String, GooglePlayProductDetails> products;
+  final bool billingAvailable;
+
+  const _Catalog(this.plans, this.products, this.billingAvailable);
+}
+
+class _PaywallScreenState extends State<PaywallScreen> {
+  late final AppState _appState = context.read<AppState>();
+  late String _planOnOpen = _appState.planId;
+  late Future<_Catalog> _futureCatalog;
   String? _selectedId;
-  bool _isStarting = false;
-  bool _awaitingPayment = false;
-  bool _isRefreshing = false;
+  bool _isPurchasing = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _loadPlans();
+    _appState.addListener(_onAppStateChanged);
+    _load();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _appState.removeListener(_onAppStateChanged);
     super.dispose();
   }
 
-  void _loadPlans() {
-    _futurePlans = context.read<AppState>().api.getPlans();
+  void _load() {
+    _futureCatalog = () async {
+      final plans = await _appState.api.getPlans();
+      final available = await _appState.billing.isAvailable();
+      final products =
+          available ? await _appState.billing.queryProducts(plans) : <String, GooglePlayProductDetails>{};
+      return _Catalog(plans, products, available);
+    }();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Coming back from the checkout page: pick up the new plan.
-    if (state == AppLifecycleState.resumed && _awaitingPayment) {
-      _refreshStatus(quiet: true);
-    }
+  /// Closes with a welcome once a purchase is verified and the plan changes.
+  void _onAppStateChanged() {
+    final plan = _appState.planId;
+    if (!mounted || plan == 'free' || plan == _planOnOpen) return;
+    _planOnOpen = plan;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Welcome to ${plan[0].toUpperCase()}${plan.substring(1)} ✨')),
+    );
+    Navigator.of(context).maybePop();
   }
 
-  Future<void> _refreshStatus({bool quiet = false}) async {
-    final appState = context.read<AppState>();
-    final before = appState.planId;
-    setState(() => _isRefreshing = true);
-    await appState.refreshSubscription();
-    if (!mounted) return;
-    setState(() => _isRefreshing = false);
-
-    final after = appState.planId;
-    if (after != 'free' && after != before) {
-      _awaitingPayment = false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Welcome to ${_nameFor(after)} ✨')),
-      );
-      Navigator.of(context).pop();
-    } else if (!quiet) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No new payment yet. Mobile money payments can take a minute to confirm.'),
-        ),
-      );
-    }
-  }
-
-  String _nameFor(String planId) => planId[0].toUpperCase() + planId.substring(1);
-
-  Future<void> _checkout(Plan plan) async {
-    setState(() => _isStarting = true);
+  Future<void> _buy(_Catalog catalog, Plan plan) async {
+    final product = catalog.products[plan.productId];
+    if (product == null) return;
+    setState(() => _isPurchasing = true);
     try {
-      final url = await context.read<AppState>().api.startCheckout(plan.id);
-      final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      if (!opened) throw Exception('Could not open checkout');
-      _awaitingPayment = true;
-    } on DioException catch (e) {
-      final detail = e.response?.data is Map ? e.response?.data['detail'] : null;
-      _showError(detail is String ? detail : "Couldn't start the payment. Please try again.");
+      await _appState.billing.buy(product, plans: catalog.plans);
     } catch (_) {
-      _showError("Couldn't open the payment page. Please try again.");
+      _snack("Couldn't open Google Play. Please try again.");
     } finally {
-      if (mounted) setState(() => _isStarting = false);
+      if (mounted) setState(() => _isPurchasing = false);
     }
   }
 
-  void _showError(String message) {
+  Future<void> _restore() async {
+    await _appState.billing.restorePurchases();
+    await _appState.refreshSubscription();
+    if (mounted && _appState.planId == 'free') {
+      _snack('No active DreamCast subscription was found on this Google account.');
+    }
+  }
+
+  void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
@@ -106,10 +106,11 @@ class _PaywallScreenState extends State<PaywallScreen> with WidgetsBindingObserv
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
-            child: FutureBuilder<List<Plan>>(
-              future: _futurePlans,
+            child: FutureBuilder<_Catalog>(
+              future: _futureCatalog,
               builder: (context, snapshot) {
-                final plans = snapshot.data ?? const <Plan>[];
+                final catalog = snapshot.data;
+                final plans = catalog?.plans ?? const <Plan>[];
                 final selected = _resolveSelection(plans, currentPlan);
 
                 return Column(
@@ -148,7 +149,7 @@ class _PaywallScreenState extends State<PaywallScreen> with WidgetsBindingObserv
                             const Reveal(
                               delayMs: 200,
                               child: Text(
-                                'Simple monthly plans in XAF. Pay with MTN MoMo, Orange Money or card.',
+                                'Monthly plans, billed securely through Google Play. Change or cancel anytime.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
                               ),
@@ -160,13 +161,14 @@ class _PaywallScreenState extends State<PaywallScreen> with WidgetsBindingObserv
                                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                               )
                             else if (snapshot.hasError || plans.isEmpty)
-                              _LoadError(onRetry: () => setState(_loadPlans))
-                            else
+                              _LoadError(onRetry: () => setState(_load))
+                            else ...[
                               for (final (i, plan) in plans.indexed) ...[
                                 Reveal(
                                   delayMs: 260 + i * 90,
                                   child: _PlanCard(
                                     plan: plan,
+                                    price: catalog!.products[plan.productId]?.price ?? plan.referencePrice,
                                     selected: plan.id == selected?.id,
                                     isCurrent: plan.id == currentPlan,
                                     onTap: () => setState(() => _selectedId = plan.id),
@@ -174,18 +176,23 @@ class _PaywallScreenState extends State<PaywallScreen> with WidgetsBindingObserv
                                 ),
                                 const SizedBox(height: 12),
                               ],
+                              const SizedBox(height: 4),
+                              const _LegalLinks(),
+                            ],
                           ],
                         ),
                       ),
                     ),
-                    if (selected != null)
+                    if (catalog != null && selected != null)
                       _CheckoutBar(
                         plan: selected,
-                        isCurrent: selected.id == currentPlan,
-                        busy: _isStarting,
-                        refreshing: _isRefreshing,
-                        onContinue: () => _checkout(selected),
-                        onRefresh: () => _refreshStatus(),
+                        plans: catalog.plans,
+                        product: catalog.products[selected.productId],
+                        billingAvailable: catalog.billingAvailable,
+                        currentPlan: currentPlan,
+                        busy: _isPurchasing,
+                        onBuy: () => _buy(catalog, selected),
+                        onRestore: _restore,
                       ),
                   ],
                 );
@@ -211,12 +218,14 @@ class _PaywallScreenState extends State<PaywallScreen> with WidgetsBindingObserv
 
 class _PlanCard extends StatelessWidget {
   final Plan plan;
+  final String price;
   final bool selected;
   final bool isCurrent;
   final VoidCallback onTap;
 
   const _PlanCard({
     required this.plan,
+    required this.price,
     required this.selected,
     required this.isCurrent,
     required this.onTap,
@@ -230,7 +239,7 @@ class _PlanCard extends StatelessWidget {
     return Semantics(
       selected: selected,
       button: true,
-      label: '${plan.name}, ${plan.price} per month',
+      label: '${plan.name}, $price per month',
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         decoration: BoxDecoration(
@@ -274,7 +283,8 @@ class _PlanCard extends StatelessWidget {
                               runSpacing: 4,
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Text(plan.name, style: AppTheme.display(size: 25, weight: FontWeight.w600, height: 1)),
+                                Text(plan.name,
+                                    style: AppTheme.display(size: 25, weight: FontWeight.w600, height: 1)),
                                 if (badge != null) _Badge(badge, filled: !isCurrent),
                               ],
                             ),
@@ -296,12 +306,14 @@ class _PlanCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            plan.price,
-                            style: AppTheme.display(size: 22, color: AppTheme.accent, weight: FontWeight.w700, height: 1)
+                            price,
+                            style: AppTheme.display(
+                                    size: 22, color: AppTheme.accent, weight: FontWeight.w700, height: 1)
                                 .copyWith(fontFeatures: const [FontFeature.liningFigures()]),
                           ),
                           const SizedBox(height: 4),
-                          const Text('per month', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                          const Text('per month',
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
                         ],
                       ),
                     ],
@@ -341,14 +353,6 @@ class _PlanCard extends StatelessWidget {
                                     ),
                                   ),
                                 ],
-                              ),
-                            ),
-                          if (selected)
-                            Text(
-                              plan.perDay,
-                              style: AppTheme.eyebrow(color: AppTheme.textSecondary).copyWith(
-                                fontSize: 10,
-                                letterSpacing: 1.6,
                               ),
                             ),
                         ],
@@ -415,25 +419,63 @@ class _Badge extends StatelessWidget {
 
 class _CheckoutBar extends StatelessWidget {
   final Plan plan;
-  final bool isCurrent;
+  final List<Plan> plans;
+  final GooglePlayProductDetails? product;
+  final bool billingAvailable;
+  final String currentPlan;
   final bool busy;
-  final bool refreshing;
-  final VoidCallback onContinue;
-  final VoidCallback onRefresh;
+  final VoidCallback onBuy;
+  final VoidCallback onRestore;
 
   const _CheckoutBar({
     required this.plan,
-    required this.isCurrent,
+    required this.plans,
+    required this.product,
+    required this.billingAvailable,
+    required this.currentPlan,
     required this.busy,
-    required this.refreshing,
-    required this.onContinue,
-    required this.onRefresh,
+    required this.onBuy,
+    required this.onRestore,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isCurrent = plan.id == currentPlan;
+    final currentIndex = plans.indexWhere((p) => p.id == currentPlan);
+    final isSwitch = currentIndex >= 0 && !isCurrent;
+    final isUpgrade = isSwitch && plans.indexOf(plan) > currentIndex;
+    final price = product?.price;
+
+    final String label;
+    if (isCurrent) {
+      label = 'Your current plan';
+    } else if (price == null) {
+      label = 'Continue with ${plan.name}';
+    } else {
+      label = '${isSwitch ? 'Switch' : 'Subscribe'} to ${plan.name} · $price/month';
+    }
+
+    final String terms;
+    if (!BillingService.isSupported) {
+      terms = 'Subscriptions are purchased through Google Play in the DreamCast Android app.';
+    } else if (!billingAvailable || price == null) {
+      terms =
+          'Google Play Billing is unavailable on this device right now. Make sure the Play Store is installed and signed in.';
+    } else if (isCurrent) {
+      terms = 'Manage, change or cancel your subscription anytime in Google Play.';
+    } else {
+      final timing = !isSwitch
+          ? ''
+          : isUpgrade
+              ? ' Your upgrade starts now and unused time on your current plan is credited.'
+              : ' Your new plan starts at your next renewal date.';
+      terms = '$price per month, charged to your Google Play account. Renews automatically every month until '
+          'you cancel. Cancel anytime in Google Play › Subscriptions — you keep access until the end of the '
+          'period you have paid for.$timing';
+    }
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppTheme.hairline, width: 0.6)),
         color: Color(0x990A0816),
@@ -442,42 +484,70 @@ class _CheckoutBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           GlowButton(
-            label: isCurrent
-                ? 'Renew ${plan.name} · ${plan.price}'
-                : 'Continue with ${plan.name} · ${plan.price}',
-            busyLabel: 'Opening secure checkout…',
+            label: label,
+            busyLabel: 'Opening Google Play…',
             busy: busy,
-            onPressed: onContinue,
+            onPressed: isCurrent || product == null ? null : onBuy,
           ),
           const SizedBox(height: 10),
+          Text(
+            terms,
+            textAlign: TextAlign.center,
+            style:
+                TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.9), fontSize: 11.5, height: 1.45),
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.lock_outline, size: 13, color: AppTheme.textSecondary),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Secure payment by Flutterwave · MTN MoMo · Orange Money · Card',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.9), fontSize: 11.5),
+              TextButton(
+                onPressed: () => launchUrl(
+                  AppConfig.manageSubscriptionUri(isCurrent ? plan.productId : null),
+                  mode: LaunchMode.externalApplication,
                 ),
+                child: const Text('Manage subscription', style: TextStyle(fontSize: 12.5)),
+              ),
+              const Text('·', style: TextStyle(color: AppTheme.textSecondary)),
+              TextButton(
+                onPressed: BillingService.isSupported ? onRestore : null,
+                child: const Text('Restore purchases', style: TextStyle(fontSize: 12.5)),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            plan.autoRenews
-                ? 'Renews monthly. Cancel anytime.'
-                : 'One month of access. No automatic charges — renew whenever you like.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.75), fontSize: 11.5),
-          ),
-          TextButton(
-            onPressed: refreshing ? null : onRefresh,
-            child: Text(refreshing ? 'Checking…' : 'Already paid? Refresh my plan'),
-          ),
         ],
       ),
+    );
+  }
+}
+
+class _LegalLinks extends StatelessWidget {
+  const _LegalLinks();
+
+  @override
+  Widget build(BuildContext context) {
+    const style =
+        TextStyle(fontSize: 12, color: AppTheme.textSecondary, decoration: TextDecoration.underline);
+    return Column(
+      children: [
+        const Text(
+          'Readings are AI-generated for reflection and entertainment, not medical or psychological advice.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary, height: 1.45),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton(
+              onPressed: () => launchUrl(Uri.parse(AppConfig.termsUrl), mode: LaunchMode.externalApplication),
+              child: const Text('Terms of Service', style: style),
+            ),
+            TextButton(
+              onPressed: () =>
+                  launchUrl(Uri.parse(AppConfig.privacyPolicyUrl), mode: LaunchMode.externalApplication),
+              child: const Text('Privacy Policy', style: style),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

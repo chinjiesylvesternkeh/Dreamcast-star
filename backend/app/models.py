@@ -33,7 +33,6 @@ class SubscriptionProvider(str, enum.Enum):
     STRIPE = "stripe"
     GOOGLE_PLAY = "google_play"
     REVENUECAT = "revenuecat"
-    FLUTTERWAVE = "flutterwave"
     NONE = "none"
 
 
@@ -67,6 +66,26 @@ class Dream(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     owner = relationship("User", back_populates="dreams")
+    reports = relationship("DreamReport", back_populates="dream", cascade="all, delete-orphan")
+
+
+class DreamReport(Base):
+    """A user's flag on an AI-generated reading or image.
+
+    Google Play's AI-generated content policy requires an in-app way to
+    report offensive output; these rows are the moderation queue.
+    """
+
+    __tablename__ = "dream_reports"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    dream_id = Column(UUID(as_uuid=False), ForeignKey("dreams.id"), nullable=False, index=True)
+    reason = Column(String(40), nullable=False)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved = Column(Boolean, default=False)
+
+    dream = relationship("Dream", back_populates="reports")
 
 
 class Subscription(Base):

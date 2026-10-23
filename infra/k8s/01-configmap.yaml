@@ -11,7 +11,7 @@ data:
   ALLOWED_ORIGINS: '["https://dreamcast.app"]'
   AI_MODEL_NAME: "claude-sonnet-4-6"
   IMAGE_PROVIDER_URL: "https://api.stability.ai/v2beta/stable-image/generate/core"
-  PAYMENT_PROVIDER: "stripe"
+  PAYMENT_PROVIDER: "google_play"
   GOOGLE_PLAY_PACKAGE_NAME: "com.dreamcast.app"
   FREE_TIER_WEEKLY_LIMIT: "1"
   ACCESS_TOKEN_EXPIRE_MINUTES: "1440"

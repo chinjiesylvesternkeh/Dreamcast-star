@@ -1,12 +1,14 @@
 """
 DreamCast plan catalog — the single source of truth for what each tier
-costs and unlocks.
+unlocks and which Google Play subscription product sells it.
 
-The mobile paywall renders whatever GET /api/v1/subscriptions/plans returns,
-and dream submission limits / reading depth are resolved from here, so
-prices and perks only ever need to change in this file.
+Prices are set per country in Play Console (base price in USD below); the
+app always displays the localized price Google Play returns, never these
+reference values. Dream submission limits and reading depth are resolved
+from here, so perks only ever need to change in this file.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -15,19 +17,21 @@ from app import models
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
-# A Flutterwave renewal can land a little after the period ends; keep
-# access during that window so paying users are never locked out early.
-RENEWAL_GRACE = timedelta(days=1)
+# Play can deliver a renewal shortly after the period ends; re-check with
+# Google only once this window has passed so renewals never cause a blip.
+RENEWAL_GRACE = timedelta(hours=12)
 
 
 @dataclass(frozen=True)
 class Plan:
     id: str
     name: str
-    price_xaf: int
+    price_usd: str  # Play Console base price; display uses Play's localized price
     tagline: str
     features: tuple[str, ...]
+    product_id: str = ""  # Google Play subscription product id
     daily_limit: Optional[int] = None
     weekly_limit: Optional[int] = None
     reading_depth: str = "standard"  # standard | deep | oracle
@@ -36,13 +40,13 @@ class Plan:
 
     @property
     def is_paid(self) -> bool:
-        return self.price_xaf > 0
+        return bool(self.product_id)
 
 
 FREE = Plan(
     id="free",
     name="Free",
-    price_xaf=0,
+    price_usd="0",
     tagline="A first glimpse.",
     weekly_limit=settings.FREE_TIER_WEEKLY_LIMIT,
     features=(
@@ -55,7 +59,8 @@ FREE = Plan(
 LUCID = Plan(
     id="lucid",
     name="Lucid",
-    price_xaf=1000,
+    price_usd="1.79",
+    product_id="dreamcast_lucid_monthly",
     tagline="For the curious dreamer.",
     daily_limit=1,
     features=(
@@ -68,7 +73,8 @@ LUCID = Plan(
 MYSTIC = Plan(
     id="mystic",
     name="Mystic",
-    price_xaf=2000,
+    price_usd="3.49",
+    product_id="dreamcast_mystic_monthly",
     tagline="Go beneath the surface.",
     daily_limit=5,
     reading_depth="deep",
@@ -84,7 +90,8 @@ MYSTIC = Plan(
 ORACLE = Plan(
     id="oracle",
     name="Oracle",
-    price_xaf=5000,
+    price_usd="8.79",
+    product_id="dreamcast_oracle_monthly",
     tagline="See the story your dreams are telling.",
     daily_limit=15,
     reading_depth="oracle",
@@ -101,29 +108,59 @@ ORACLE = Plan(
 PLANS: dict[str, Plan] = {plan.id: plan for plan in (FREE, LUCID, MYSTIC, ORACLE)}
 PAID_PLANS = [plan for plan in PLANS.values() if plan.is_paid]
 
+# The single-tier product sold before plans existed keeps its perks.
+LEGACY_PRODUCTS = {"dreamcast_pro_monthly": MYSTIC}
 
-def _as_utc(value: datetime) -> datetime:
+
+def plan_for_product(product_id: str) -> Optional[Plan]:
+    for plan in PAID_PLANS:
+        if plan.product_id == product_id:
+            return plan
+    return LEGACY_PRODUCTS.get(product_id)
+
+
+def as_utc(value: datetime) -> datetime:
     # SQLite hands back naive datetimes; everything is stored in UTC.
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def expire_if_lapsed(db, subscription: Optional[models.Subscription]) -> None:
-    """Drops a Flutterwave subscriber back to Free once their paid month runs out.
+def refresh_if_lapsed(db, subscription: Optional[models.Subscription]) -> None:
+    """Re-checks a Google Play subscription with Google once its period has ended.
 
-    Flutterwave payments buy a 30-day period (renewed by webhook when a
-    payment plan is configured), so lapsing is detected lazily on read.
+    Real-time developer notifications normally keep the period current; this
+    is the safety net if one is missed. A renewed subscription gets its new
+    expiry, a lapsed one drops back to Free. Network or configuration errors
+    leave the subscription untouched rather than locking a paying user out.
     """
     if (
         subscription is None
-        or subscription.provider != models.SubscriptionProvider.FLUTTERWAVE
-        or subscription.status != models.SubscriptionStatus.ACTIVE
+        or subscription.provider != models.SubscriptionProvider.GOOGLE_PLAY
+        or subscription.status not in (models.SubscriptionStatus.ACTIVE, models.SubscriptionStatus.TRIAL)
         or subscription.current_period_end is None
+        or as_utc(subscription.current_period_end) + RENEWAL_GRACE > datetime.now(timezone.utc)
     ):
         return
-    if _as_utc(subscription.current_period_end) + RENEWAL_GRACE < datetime.now(timezone.utc):
+
+    from app.services.payment_service import GooglePlayProvider, SubscriptionInactive
+
+    plan = PLANS.get(subscription.plan or "") or MYSTIC
+    try:
+        result = GooglePlayProvider().verify_mobile_purchase(
+            subscription.provider_subscription_id or "", plan.product_id
+        )
+    except SubscriptionInactive:
         subscription.status = models.SubscriptionStatus.FREE
         subscription.plan = FREE.id
         db.commit()
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not re-verify Play subscription %s: %s", subscription.id, exc)
+        return
+
+    subscription.current_period_end = datetime.fromtimestamp(
+        int(result["expiryTimeMillis"]) / 1000, tz=timezone.utc
+    )
+    db.commit()
 
 
 def plan_for(subscription: Optional[models.Subscription]) -> Plan:
@@ -135,6 +172,6 @@ def plan_for(subscription: Optional[models.Subscription]) -> Plan:
         return FREE
     plan = PLANS.get(subscription.plan or "")
     if plan is None or not plan.is_paid:
-        # Paid subscriptions created before tiers existed (Stripe / Play).
+        # Paid subscriptions created before tiers existed.
         return MYSTIC
     return plan

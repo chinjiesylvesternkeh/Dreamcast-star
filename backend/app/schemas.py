@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -35,6 +35,11 @@ class UserOut(BaseModel):
 # ---------- Dreams ----------
 class DreamCreate(BaseModel):
     raw_text: str = Field(min_length=3, max_length=4000)
+
+
+class DreamReportCreate(BaseModel):
+    reason: Literal["offensive", "harmful", "inaccurate", "image", "other"]
+    details: Optional[str] = Field(default=None, max_length=1000)
 
 
 class DreamOut(BaseModel):
@@ -74,19 +79,14 @@ class CheckoutSessionResponse(BaseModel):
 class PlanOut(BaseModel):
     id: str
     name: str
-    price_xaf: int
-    currency: str = "XAF"
+    product_id: str
+    price_usd: str
     period: str = "month"
     tagline: str
     features: list[str]
     daily_limit: Optional[int]
     weekly_limit: Optional[int]
     highlight: Optional[str]
-    auto_renews: bool
-
-
-class FlutterwaveCheckoutRequest(BaseModel):
-    plan: str
 
 
 class GooglePlayPurchaseVerifyRequest(BaseModel):

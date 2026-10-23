@@ -54,23 +54,17 @@ class Settings(BaseSettings):
     # This backend ships with a PaymentProvider abstraction (see
     # app/services/payment_service.py). Fill in real keys via env vars /
     # k8s secrets — no code changes required to go live.
-    PAYMENT_PROVIDER: str = "stripe"  # stripe | google_play | revenuecat | none
+    PAYMENT_PROVIDER: str = "google_play"  # google_play | stripe | revenuecat | none
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID_MONTHLY: str = ""
     GOOGLE_PLAY_PACKAGE_NAME: str = "com.dreamcast.app"
     GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: str = ""  # path or raw JSON, mounted via secret
+    # Shared token appended to the Pub/Sub push URL for real-time developer
+    # notifications: .../subscriptions/webhook/google_play?token=<value>
+    GOOGLE_PLAY_RTDN_TOKEN: str = ""
     REVENUECAT_API_KEY: str = ""
     REVENUECAT_WEBHOOK_SECRET: str = ""
-    # Flutterwave (XAF mobile money + cards) — powers the Lucid / Mystic /
-    # Oracle plans in app/plans.py, independent of PAYMENT_PROVIDER above.
-    FLW_SECRET_KEY: str = ""
-    FLW_WEBHOOK_SECRET: str = ""  # same value as Dashboard > Webhooks > Secret hash
-    FLW_REDIRECT_URL: str = ""  # defaults to this API's /subscriptions/flutterwave/return
-    # Optional payment-plan ids; when set, Flutterwave auto-renews monthly.
-    FLW_PLAN_ID_LUCID: str = ""
-    FLW_PLAN_ID_MYSTIC: str = ""
-    FLW_PLAN_ID_ORACLE: str = ""
 
     # --- Free tier limit (paid plan limits live in app/plans.py) ---
     FREE_TIER_WEEKLY_LIMIT: int = 1

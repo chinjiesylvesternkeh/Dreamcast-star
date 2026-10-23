@@ -1,4 +1,4 @@
-"""subscription plans + flutterwave provider
+"""subscription plans
 
 Revision ID: 0002
 Revises: 0001
@@ -16,9 +16,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    if op.get_bind().dialect.name == "postgresql":
-        # Native enum: new values must be added explicitly.
-        op.execute("ALTER TYPE subscriptionprovider ADD VALUE IF NOT EXISTS 'FLUTTERWAVE'")
     op.add_column(
         'subscriptions',
         sa.Column('plan', sa.String(length=20), server_default='free', nullable=False),
@@ -26,5 +23,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Postgres cannot drop a single enum value; FLUTTERWAVE is left in place.
     op.drop_column('subscriptions', 'plan')
