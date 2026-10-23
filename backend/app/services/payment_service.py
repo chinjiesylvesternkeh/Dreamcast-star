@@ -18,11 +18,12 @@ HOW TO GO LIVE:
        POST /api/v1/subscriptions/webhook/{provider}
   4. Nothing else in the codebase needs to change.
 """
+
 import json
 import logging
+from pathlib import Path
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from app.config import get_settings
 
@@ -32,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 class PaymentProvider(ABC):
     @abstractmethod
-    def create_checkout_session(self, user_email: str, success_url: str, cancel_url: str) -> str:
+    def create_checkout_session(
+        self, user_email: str, success_url: str, cancel_url: str
+    ) -> str:
         """Returns a checkout URL the client should redirect the user to."""
 
     @abstractmethod
@@ -56,7 +59,9 @@ class StripeProvider(PaymentProvider):
         stripe.api_key = settings.STRIPE_SECRET_KEY
         self.stripe = stripe
 
-    def create_checkout_session(self, user_email: str, success_url: str, cancel_url: str) -> str:
+    def create_checkout_session(
+        self, user_email: str, success_url: str, cancel_url: str
+    ) -> str:
         session = self.stripe.checkout.Session.create(
             mode="subscription",
             customer_email=user_email,
@@ -73,7 +78,9 @@ class StripeProvider(PaymentProvider):
         return event
 
     def verify_mobile_purchase(self, purchase_token: str, product_id: str) -> dict:
-        raise NotImplementedError("Stripe does not handle native mobile purchase tokens")
+        raise NotImplementedError(
+            "Stripe does not handle native mobile purchase tokens"
+        )
 
 
 class GooglePlayProvider(PaymentProvider):
@@ -91,7 +98,9 @@ class GooglePlayProvider(PaymentProvider):
                 "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON."
             )
 
-    def create_checkout_session(self, user_email: str, success_url: str, cancel_url: str) -> str:
+    def create_checkout_session(
+        self, user_email: str, success_url: str, cancel_url: str
+    ) -> str:
         # Google Play subscriptions are purchased natively via Play Billing
         # in the Android app — there is no server-generated checkout URL.
         # The mobile app calls BillingClient.launchBillingFlow() directly
@@ -110,17 +119,50 @@ class GooglePlayProvider(PaymentProvider):
         return json.loads(payload)
 
     def verify_mobile_purchase(self, purchase_token: str, product_id: str) -> dict:
-        # TODO: implement using google-api-python-client:
-        #   androidpublisher.purchases().subscriptions().get(
-        #       packageName=settings.GOOGLE_PLAY_PACKAGE_NAME,
-        #       subscriptionId=product_id,
-        #       token=purchase_token,
-        #   ).execute()
-        # Left as a stub because it requires your real Play Console
-        # service-account credentials to test against.
-        raise NotImplementedError(
-            "Wire up google-api-python-client with your service account JSON here."
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+
+        credential_value = settings.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON
+        if not credential_value:
+            raise RuntimeError("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not configured")
+
+        credential_path = Path(credential_value)
+        if credential_path.is_file():
+            credentials = service_account.Credentials.from_service_account_file(
+                str(credential_path),
+                scopes=["https://www.googleapis.com/auth/androidpublisher"],
+            )
+        else:
+            try:
+                service_account_info = json.loads(credential_value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON must be a JSON object or file path"
+                ) from exc
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/androidpublisher"],
+            )
+
+        publisher = build(
+            "androidpublisher", "v3", credentials=credentials, cache_discovery=False
         )
+        result = (
+            publisher.purchases()
+            .subscriptions()
+            .get(
+                packageName=settings.GOOGLE_PLAY_PACKAGE_NAME,
+                subscriptionId=product_id,
+                token=purchase_token,
+            )
+            .execute()
+        )
+        expiry_millis = int(result.get("expiryTimeMillis", "0"))
+        if result.get("cancelReason") is not None or expiry_millis <= int(
+            datetime.now(timezone.utc).timestamp() * 1000
+        ):
+            raise ValueError("Google Play subscription is not active")
+        return result
 
 
 class RevenueCatProvider(PaymentProvider):
@@ -132,11 +174,11 @@ class RevenueCatProvider(PaymentProvider):
 
     def __init__(self):
         if not settings.REVENUECAT_API_KEY:
-            logger.warning(
-                "RevenueCatProvider initialized without REVENUECAT_API_KEY."
-            )
+            logger.warning("RevenueCatProvider initialized without REVENUECAT_API_KEY.")
 
-    def create_checkout_session(self, user_email: str, success_url: str, cancel_url: str) -> str:
+    def create_checkout_session(
+        self, user_email: str, success_url: str, cancel_url: str
+    ) -> str:
         raise NotImplementedError(
             "RevenueCat purchases are initiated client-side via the Purchases SDK."
         )
@@ -155,14 +197,22 @@ class RevenueCatProvider(PaymentProvider):
 class NullProvider(PaymentProvider):
     """No-op provider so the app boots cleanly before you've chosen one."""
 
-    def create_checkout_session(self, user_email: str, success_url: str, cancel_url: str) -> str:
-        raise NotImplementedError("No payment provider configured. Set PAYMENT_PROVIDER.")
+    def create_checkout_session(
+        self, user_email: str, success_url: str, cancel_url: str
+    ) -> str:
+        raise NotImplementedError(
+            "No payment provider configured. Set PAYMENT_PROVIDER."
+        )
 
     def verify_webhook(self, payload: bytes, signature: str) -> dict:
-        raise NotImplementedError("No payment provider configured. Set PAYMENT_PROVIDER.")
+        raise NotImplementedError(
+            "No payment provider configured. Set PAYMENT_PROVIDER."
+        )
 
     def verify_mobile_purchase(self, purchase_token: str, product_id: str) -> dict:
-        raise NotImplementedError("No payment provider configured. Set PAYMENT_PROVIDER.")
+        raise NotImplementedError(
+            "No payment provider configured. Set PAYMENT_PROVIDER."
+        )
 
 
 def get_payment_provider() -> PaymentProvider:

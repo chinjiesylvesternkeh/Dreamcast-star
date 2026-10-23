@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -13,6 +14,68 @@ from app.services.payment_service import (
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 logger = logging.getLogger(__name__)
+
+
+def _event_object(event: dict) -> dict:
+    return event.get("data", {}).get("object", event.get("event", event))
+
+
+def _subscription_status(event_type: str, event_object: dict):
+    if event_type in {"checkout.session.completed", "customer.subscription.created"}:
+        return models.SubscriptionStatus.ACTIVE
+    if event_type in {
+        "customer.subscription.deleted",
+        "subscription_cancelled",
+        "CANCELLATION",
+    }:
+        return models.SubscriptionStatus.CANCELED
+    if event_type in {"invoice.payment_failed", "subscription_paused", "PAYMENT_ISSUE"}:
+        return models.SubscriptionStatus.PAST_DUE
+    provider_status = event_object.get("status")
+    return {
+        "active": models.SubscriptionStatus.ACTIVE,
+        "trialing": models.SubscriptionStatus.TRIAL,
+        "past_due": models.SubscriptionStatus.PAST_DUE,
+        "canceled": models.SubscriptionStatus.CANCELED,
+        "unpaid": models.SubscriptionStatus.PAST_DUE,
+    }.get(provider_status)
+
+
+def _find_subscription(db: Session, provider_name: str, event_object: dict):
+    provider = getattr(models.SubscriptionProvider, provider_name.upper(), None)
+    if provider:
+        query = db.query(models.Subscription).filter(
+            (models.Subscription.provider == provider)
+            | (models.Subscription.provider == models.SubscriptionProvider.NONE)
+        )
+    else:
+        query = db.query(models.Subscription)
+
+    provider_ids = [
+        event_object.get("subscription"),
+        event_object.get("subscription_id"),
+        event_object.get("purchaseToken"),
+        event_object.get("id"),
+    ]
+    for provider_id in provider_ids:
+        if provider_id:
+            subscription = query.filter(
+                (models.Subscription.provider_subscription_id == provider_id)
+                | (models.Subscription.provider_customer_id == provider_id)
+            ).first()
+            if subscription:
+                return subscription
+
+    email = event_object.get("customer_email") or event_object.get("email")
+    customer_details = event_object.get("customer_details") or {}
+    email = email or customer_details.get("email")
+    if email:
+        return (
+            query.join(models.Subscription.user)
+            .filter(models.User.email == email)
+            .first()
+        )
+    return None
 
 
 @router.get("/me", response_model=schemas.SubscriptionOut)
@@ -52,7 +115,9 @@ def verify_mobile_purchase(
 ):
     provider = get_payment_provider()
     try:
-        result = provider.verify_mobile_purchase(payload.purchase_token, payload.product_id)
+        result = provider.verify_mobile_purchase(
+            payload.purchase_token, payload.product_id
+        )
     except NotImplementedError as exc:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, str(exc))
 
@@ -60,7 +125,12 @@ def verify_mobile_purchase(
     sub.status = models.SubscriptionStatus.ACTIVE
     sub.provider = models.SubscriptionProvider.GOOGLE_PLAY
     sub.provider_subscription_id = payload.purchase_token
-    sub.current_period_end = compute_period_end(30)
+    expiry_millis = result.get("expiryTimeMillis")
+    sub.current_period_end = (
+        datetime.fromtimestamp(int(expiry_millis) / 1000, tz=timezone.utc)
+        if expiry_millis
+        else compute_period_end(30)
+    )
     db.commit()
     db.refresh(sub)
     return sub
@@ -81,10 +151,11 @@ async def payment_webhook(
       https://your-domain.com/api/v1/subscriptions/webhook/revenuecat
     """
     raw_body = await request.body()
-    provider = get_payment_provider()
+    payment_provider = get_payment_provider()
+    provider = getattr(models.SubscriptionProvider, provider_name.upper(), None)
 
     try:
-        event = provider.verify_webhook(raw_body, stripe_signature or "")
+        event = payment_provider.verify_webhook(raw_body, stripe_signature or "")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Webhook verification failed for %s: %s", provider_name, exc)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature")
@@ -99,12 +170,35 @@ async def payment_webhook(
     )
     db.commit()
 
-    # TODO: dispatch on event["type"] to update the matching Subscription row:
-    #   - checkout.session.completed / customer.subscription.updated -> ACTIVE
-    #   - customer.subscription.deleted -> CANCELED
-    #   - invoice.payment_failed -> PAST_DUE
-    # Left intentionally minimal here since exact event shapes differ per
-    # provider — wire this up once you've picked and configured one.
+    event_type = str(event.get("type", "unknown"))
+    event_object = _event_object(event)
+    subscription = _find_subscription(db, provider_name, event_object)
+    new_status = _subscription_status(event_type, event_object)
+    if subscription and new_status:
+        subscription.status = new_status
+        if provider:
+            subscription.provider = provider
+        provider_id = (
+            event_object.get("subscription")
+            or event_object.get("subscription_id")
+            or event_object.get("purchaseToken")
+            or event_object.get("id")
+        )
+        if provider_id and not subscription.provider_subscription_id:
+            subscription.provider_subscription_id = provider_id
+        period_end = event_object.get("current_period_end")
+        if period_end:
+            subscription.current_period_end = datetime.fromtimestamp(
+                int(period_end), tz=timezone.utc
+            )
+        payment_event = (
+            db.query(models.PaymentEvent)
+            .order_by(models.PaymentEvent.received_at.desc())
+            .first()
+        )
+        if payment_event:
+            payment_event.processed = True
+        db.commit()
     logger.info("Received %s webhook event: %s", provider_name, event.get("type"))
 
     return {"received": True}

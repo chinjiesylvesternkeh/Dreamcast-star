@@ -1,0 +1,6 @@
+# Copy this file to key.properties and replace every value before a release build.
+# Keep key.properties and the keystore outside source control.
+storePassword=REPLACE_WITH_KEYSTORE_PASSWORD
+keyPassword=REPLACE_WITH_KEY_PASSWORD
+keyAlias=upload
+storeFile=C:/secure/path/dreamcast-upload-keystore.jks

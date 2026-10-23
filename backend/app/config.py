@@ -5,6 +5,7 @@ Everything here is sourced from environment variables so the exact same
 container image can run in local dev, staging, and production — only the
 env vars / Kubernetes secrets differ. Never hardcode secrets in this file.
 """
+
 from functools import lru_cache
 from typing import List
 
@@ -12,7 +13,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # --- App ---
     APP_NAME: str = "DreamCast API"
@@ -39,7 +42,13 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     AI_MODEL_NAME: str = "claude-sonnet-4-6"
     IMAGE_PROVIDER_API_KEY: str = ""  # e.g. Stability AI / Google Imagen key
-    IMAGE_PROVIDER_URL: str = "https://api.stability.ai/v2beta/stable-image/generate/core"
+    IMAGE_PROVIDER_URL: str = (
+        "https://api.stability.ai/v2beta/stable-image/generate/core"
+    )
+    IMAGE_STORAGE_BUCKET: str = ""
+    IMAGE_STORAGE_REGION: str = ""
+    IMAGE_STORAGE_ENDPOINT: str = ""
+    IMAGE_PUBLIC_BASE_URL: str = ""
 
     # --- Payments (bring-your-own keys) ---
     # This backend ships with a PaymentProvider abstraction (see

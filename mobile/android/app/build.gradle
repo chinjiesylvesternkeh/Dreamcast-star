@@ -2,7 +2,11 @@ plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
-    id "com.google.gms.google-services" // required for Firebase push notifications
+}
+
+// Firebase is optional until a project-specific google-services.json is added.
+if (file("$projectDir/google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
 }
 
 def localProperties = new Properties()
@@ -24,6 +28,13 @@ def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+def isReleaseTask = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+if (isReleaseTask && !keystorePropertiesFile.exists()) {
+    throw new GradleException(
+        "Release builds require android/key.properties and a non-debug upload keystore. " +
+        "Copy key.properties.example, fill it in, then retry."
+    )
 }
 
 android {
@@ -61,9 +72,8 @@ android {
 
     buildTypes {
         release {
-            // Uses the real upload key once key.properties is filled in;
-            // falls back to debug signing so `flutter build` doesn't break
-            // before you've generated a keystore.
+            // Debug signing remains available for local non-release builds;
+            // release tasks fail above until a real upload key is configured.
             signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
             minifyEnabled true
             shrinkResources true
