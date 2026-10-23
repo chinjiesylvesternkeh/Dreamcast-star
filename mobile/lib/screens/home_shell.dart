@@ -24,25 +24,84 @@ class _HomeShellState extends State<HomeShell> {
     final appState = context.watch<AppState>();
 
     return Scaffold(
-      body: _screens[_index],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        backgroundColor: AppTheme.surface,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.nights_stay_outlined), label: 'Dream'),
-          NavigationDestination(icon: Icon(Icons.history), label: 'History'),
+      body: Stack(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            child: KeyedSubtree(key: ValueKey(_index), child: _screens[_index]),
+          ),
+          if (!appState.isPro)
+            Positioned(
+              top: 0,
+              right: 16,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _ProPill(
+                    onTap: () => Navigator.of(context)
+                        .push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
-      floatingActionButton: appState.isPro
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
-              backgroundColor: AppTheme.accent,
-              icon: const Icon(Icons.star, color: Colors.black87),
-              label: const Text('Go Pro', style: TextStyle(color: Colors.black87)),
+      bottomNavigationBar: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppTheme.hairline, width: 0.6)),
+        ),
+        child: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: (i) => setState(() => _index = i),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.nights_stay_outlined),
+              selectedIcon: Icon(Icons.nights_stay),
+              label: 'Dream',
             ),
+            NavigationDestination(
+              icon: Icon(Icons.auto_stories_outlined),
+              selectedIcon: Icon(Icons.auto_stories),
+              label: 'Archive',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProPill extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ProPill({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = BorderRadius.circular(30);
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: shape,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: shape,
+            color: AppTheme.accent.withValues(alpha: 0.08),
+            border: Border.all(color: AppTheme.accent.withValues(alpha: 0.5), width: 0.8),
+            boxShadow: [BoxShadow(color: AppTheme.accent.withValues(alpha: 0.18), blurRadius: 16)],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.auto_awesome, size: 14, color: AppTheme.accent),
+              const SizedBox(width: 6),
+              Text('PRO', style: AppTheme.eyebrow().copyWith(letterSpacing: 2.4)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

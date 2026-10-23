@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../theme.dart';
+import '../widgets/mystic.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -48,74 +49,139 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 40),
-              Text('DreamCast',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.bold, color: AppTheme.primary)),
-              const SizedBox(height: 8),
-              Text(
-                _isSignup
-                    ? 'Every dream has something to say.\nCreate an account to start listening.'
-                    : 'Welcome back — your dreams missed you.',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
-              ),
-              const SizedBox(height: 36),
-              if (_isSignup) ...[
-                TextField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(hintText: 'Name (optional)'),
-                ),
-                const SizedBox(height: 14),
-              ],
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(hintText: 'Email'),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(hintText: 'Password (min. 8 characters)'),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-              ],
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text(_isSignup ? 'Create account' : 'Log in'),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Center(
-                child: TextButton(
-                  onPressed: () => setState(() => _isSignup = !_isSignup),
-                  child: Text(
-                    _isSignup ? 'Already have an account? Log in' : "New here? Create an account",
-                    style: const TextStyle(color: AppTheme.textSecondary),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Reveal(child: Center(child: MoonGlyph(size: 112))),
+                  const SizedBox(height: 12),
+                  Reveal(
+                    delayMs: 150,
+                    child: Text(
+                      'DreamCast',
+                      textAlign: TextAlign.center,
+                      style: AppTheme.display(size: 48, weight: FontWeight.w600),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  Reveal(
+                    delayMs: 250,
+                    child: Eyebrow(_isSignup ? 'THE NIGHT REMEMBERS' : 'WELCOME BACK, DREAMER', center: true),
+                  ),
+                  const SizedBox(height: 18),
+                  Reveal(
+                    delayMs: 350,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      child: Text(
+                        _isSignup
+                            ? 'Every dream carries a message.\nLearn to hear yours.'
+                            : 'Your dreams have been waiting for you.',
+                        key: ValueKey(_isSignup),
+                        textAlign: TextAlign.center,
+                        style: AppTheme.display(
+                          size: 20,
+                          color: AppTheme.textSecondary,
+                          style: FontStyle.italic,
+                          weight: FontWeight.w400,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 36),
+                  Reveal(
+                    delayMs: 450,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                          child: _isSignup
+                              ? Padding(
+                                  padding: const EdgeInsets.only(bottom: 14),
+                                  child: TextField(
+                                    controller: _nameController,
+                                    textCapitalization: TextCapitalization.words,
+                                    decoration: const InputDecoration(
+                                      hintText: 'Name (optional)',
+                                      prefixIcon: Icon(Icons.person_outline, size: 20),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox(width: double.infinity),
+                        ),
+                        TextField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            hintText: 'Email',
+                            prefixIcon: Icon(Icons.mail_outline, size: 20),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          onSubmitted: (_) => _isSubmitting ? null : _submit(),
+                          decoration: const InputDecoration(
+                            hintText: 'Password (min. 8 characters)',
+                            prefixIcon: Icon(Icons.lock_outline, size: 20),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Color(0xFFFF8FA3)),
+                    ),
+                  ],
+                  const SizedBox(height: 28),
+                  Reveal(
+                    delayMs: 550,
+                    child: GlowButton(
+                      label: _isSignup ? 'Begin the journey' : 'Return to the dream',
+                      busyLabel: 'Opening the door…',
+                      busy: _isSubmitting,
+                      onPressed: _submit,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Reveal(
+                    delayMs: 650,
+                    child: TextButton(
+                      onPressed: () => setState(() {
+                        _isSignup = !_isSignup;
+                        _error = null;
+                      }),
+                      child: Text(
+                        _isSignup ? 'Already have an account? Log in' : 'New here? Create an account',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
