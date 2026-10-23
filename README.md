@@ -9,8 +9,8 @@ enforces each plan's limits:
 |--------|----------------------------|------------------|------------------|-------|
 | Free   | —                          | —                | 1 per week       | Standard |
 | Lucid  | `dreamcast_lucid_monthly`  | US$1.79 / month  | 1 per day        | Standard |
-| Mystic | `dreamcast_mystic_monthly` | US$3.49 / month  | up to 5 per day  | In-depth: key symbols + a practical reflection |
-| Oracle | `dreamcast_oracle_monthly` | US$8.79 / month  | up to 15 per day | Oracle: patterns across recent dreams + a guiding question |
+| Mystic | `dreamcast_mystic_monthly` | US$3.49 / month  | up to 2 per day  | In-depth: key symbols + a practical reflection |
+| Oracle | `dreamcast_oracle_monthly` | US$8.79 / month  | up to 3 per day  | Oracle: patterns across recent dreams + a guiding question |
 
 USD prices are the former XAF 1,000 / 2,000 / 5,000 converted at ~570 XAF
 per USD. Set them as the base price in Play Console and let Play convert to

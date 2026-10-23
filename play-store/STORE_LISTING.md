@@ -38,9 +38,9 @@ WHAT YOU CAN DO
 PLANS
 DreamCast is free to try, with one reading per week. Monthly plans unlock more:
 • Lucid — a reading every day
-• Mystic — up to 5 readings a day, with every key symbol explained and a
+• Mystic — up to 2 readings a day, with every key symbol explained and a
   reflection to carry into your day
-• Oracle — up to 15 readings a day, with insights that connect each dream to your
+• Oracle — up to 3 readings a day, with insights that connect each dream to your
   recent ones and close with a guiding question
 
 Subscriptions are billed through Google Play, renew monthly, and can be cancelled
@@ -99,9 +99,9 @@ OFFRES
 DreamCast est gratuit à l'essai, avec une lecture par semaine. Les offres mensuelles
 vous permettent d'aller plus loin :
 • Lucid — une lecture chaque jour
-• Mystic — jusqu'à 5 lectures par jour, chaque symbole clé expliqué et une
+• Mystic — jusqu'à 2 lectures par jour, chaque symbole clé expliqué et une
   réflexion à garder en tête dans la journée
-• Oracle — jusqu'à 15 lectures par jour, avec des liens entre chaque rêve et vos
+• Oracle — jusqu'à 3 lectures par jour, avec des liens entre chaque rêve et vos
   rêves récents, et une question pour vous guider
 
 Les abonnements sont facturés par Google Play, se renouvellent chaque mois et

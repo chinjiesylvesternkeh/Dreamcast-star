@@ -47,7 +47,7 @@ def test_plans_are_served_in_french(client):
     assert mystic["name"] == "Mystic"  # brand names are not translated
     assert mystic["highlight"] == "Le plus populaire"
     assert mystic["recommended"] is True
-    assert mystic["features"][0].startswith("Jusqu'à 5 lectures")
+    assert mystic["features"][0].startswith("Jusqu'à 2 lectures")
 
 
 def test_reading_follows_request_language(client):

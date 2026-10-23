@@ -9,7 +9,8 @@ data:
   DEBUG: "false"
   API_V1_PREFIX: "/api/v1"
   ALLOWED_ORIGINS: '["https://dreamcast.app"]'
-  AI_MODEL_NAME: "claude-opus-5-5"
+  AI_MODEL_FREE: "claude-haiku-5-5"
+  AI_MODEL_PAID: "claude-sonnet-5-5"
   AI_EFFORT: "medium"
   IMAGE_PROVIDER_URL: "https://api.stability.ai/v2beta/stable-image/generate/core"
   PAYMENT_PROVIDER: "google_play"

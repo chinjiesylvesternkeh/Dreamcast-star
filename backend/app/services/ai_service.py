@@ -204,15 +204,21 @@ def interpret_dream(
     depth: str = "standard",
     recent_dreams: Optional[Sequence] = None,
     language: str = "en",
+    model: Optional[str] = None,
 ) -> DreamInterpretation:
     depth = depth if depth in DEPTHS else "standard"
+    model = model or settings.AI_MODEL_PAID
 
     if not settings.ANTHROPIC_API_KEY:
+        if settings.APP_ENV == "production":
+            # Real visitors must never receive the canned sample as their reading.
+            logger.error("ANTHROPIC_API_KEY is not configured in production")
+            raise ReadingUnavailable("not_configured")
         logger.warning("ANTHROPIC_API_KEY not set — returning sample reading")
         return _sample_reading(raw_text, depth, language)
 
     request = {
-        "model": settings.AI_MODEL_NAME,
+        "model": model,
         "max_tokens": 16000,
         "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": _request_text(raw_text, depth, language, recent_dreams)}],
@@ -221,7 +227,7 @@ def interpret_dream(
             "format": {"type": "json_schema", "schema": READING_SCHEMA},
         },
     }
-    if settings.AI_MODEL_NAME in _FALLBACK_MODELS:
+    if model in _FALLBACK_MODELS:
         # If a safety classifier declines, the API retries on a fallback model.
         request.update(betas=[_FALLBACK_BETA], fallbacks="default")
 
@@ -237,6 +243,14 @@ def interpret_dream(
         # 4xx here is a bug in our request; 5xx an outage. Either way, log it and fail softly.
         logger.error("AI provider error %s (request %s): %s", exc.status_code, exc.request_id, exc.message)
         raise ReadingUnavailable("api_error") from exc
+
+    usage = response.usage
+    # One line per reading: the raw numbers behind the plan margins.
+    logger.info(
+        "reading model=%s depth=%s lang=%s input_tokens=%s output_tokens=%s cache_read=%s",
+        getattr(response, "model", model), depth, language, usage.input_tokens, usage.output_tokens,
+        getattr(usage, "cache_read_input_tokens", 0),
+    )
 
     if response.stop_reason == "refusal":
         category = getattr(response.stop_details, "category", None) if response.stop_details else None

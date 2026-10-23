@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.core.deps import get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.i18n import get_language, t
 from app.plans import Plan, plan_for, refresh_if_lapsed
@@ -13,6 +15,7 @@ from app.services.ai_service import ReadingUnavailable, interpret_dream
 from app.services.image_service import generate_dream_image
 
 router = APIRouter(prefix="/dreams", tags=["dreams"])
+settings = get_settings()
 
 
 def _check_rate_limit(db: Session, user: models.User, lang: str) -> Plan:
@@ -62,13 +65,28 @@ def submit_dream(
     lang: str = Depends(get_language),
 ):
     plan = _check_rate_limit(db, user, lang)
+    user_id = user.id
+    recent = (
+        [
+            SimpleNamespace(
+                created_at=d.created_at, card_headline=d.card_headline, raw_text=d.raw_text, mood_tags=d.mood_tags
+            )
+            for d in _recent_dreams(db, user)
+        ]
+        if plan.pattern_insights
+        else None
+    )
+    # Hand the database connection back to the pool while the Oracle writes —
+    # a reading can take over a minute, and Cloud SQL connections are scarce.
+    db.commit()
 
     try:
         result = interpret_dream(
             payload.raw_text,
             depth=plan.reading_depth,
-            recent_dreams=_recent_dreams(db, user) if plan.pattern_insights else None,
+            recent_dreams=recent,
             language=lang,
+            model=settings.AI_MODEL_PAID if plan.is_paid else settings.AI_MODEL_FREE,
         )
     except ReadingUnavailable:
         # Not counted against the plan's limit: no dream is saved.
@@ -78,7 +96,7 @@ def submit_dream(
     )
 
     dream = models.Dream(
-        user_id=user.id,
+        user_id=user_id,
         raw_text=payload.raw_text,
         interpretation=result.interpretation,
         mood_tags=",".join(result.mood_tags),

@@ -28,11 +28,16 @@ ENV PATH=/home/dreamcast/.local/bin:$PATH \
 RUN chown -R dreamcast:dreamcast /app
 USER dreamcast
 
+# Cloud Run injects PORT (8080); Docker Compose / Kubernetes use the 8000 default.
+ENV PORT=8000 \
+    WEB_CONCURRENCY=2
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8000/healthz || exit 1
+    CMD curl -f "http://localhost:${PORT}/healthz" || exit 1
 
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-", \
-     "--timeout", "60"]
+# --timeout 180: detailed dream readings can take well over a minute to write.
+CMD exec gunicorn app.main:app -w "${WEB_CONCURRENCY}" -k uvicorn.workers.UvicornWorker \
+    --bind "0.0.0.0:${PORT}" --timeout 180 --graceful-timeout 30 \
+    --access-logfile - --error-logfile -

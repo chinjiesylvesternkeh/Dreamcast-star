@@ -112,7 +112,7 @@ MYSTIC = Plan(
     name="Mystic",
     price_usd="3.49",
     product_id="dreamcast_mystic_monthly",
-    daily_limit=5,
+    daily_limit=2,
     reading_depth="deep",
     recommended=True,
     copy={
@@ -120,7 +120,7 @@ MYSTIC = Plan(
             tagline="Go beneath the surface.",
             highlight="Most popular",
             features=(
-                "Up to 5 dream readings a day",
+                "Up to 2 dream readings a day",
                 "In-depth readings: every key symbol explained",
                 "A practical reflection to carry into your day",
                 "Everything in Lucid",
@@ -130,7 +130,7 @@ MYSTIC = Plan(
             tagline="Allez au-delà des apparences.",
             highlight="Le plus populaire",
             features=(
-                "Jusqu'à 5 lectures de rêve par jour",
+                "Jusqu'à 2 lectures de rêve par jour",
                 "Des lectures approfondies : chaque symbole clé expliqué",
                 "Une réflexion concrète à garder en tête dans la journée",
                 "Tout ce qu'offre Lucid",
@@ -144,7 +144,7 @@ ORACLE = Plan(
     name="Oracle",
     price_usd="8.79",
     product_id="dreamcast_oracle_monthly",
-    daily_limit=15,
+    daily_limit=3,
     reading_depth="oracle",
     pattern_insights=True,
     copy={
@@ -152,7 +152,7 @@ ORACLE = Plan(
             tagline="See the story your dreams are telling.",
             highlight="Deepest insight",
             features=(
-                "Up to 15 dream readings a day",
+                "Up to 3 dream readings a day",
                 "Pattern insights linking each dream to your recent ones",
                 "Oracle-depth readings that close with a guiding question",
                 "Everything in Mystic",
@@ -162,7 +162,7 @@ ORACLE = Plan(
             tagline="Découvrez l'histoire que racontent vos rêves.",
             highlight="Le plus approfondi",
             features=(
-                "Jusqu'à 15 lectures de rêve par jour",
+                "Jusqu'à 3 lectures de rêve par jour",
                 "Des liens entre chaque rêve et vos rêves récents",
                 "Des lectures Oracle qui se terminent par une question pour vous guider",
                 "Tout ce qu'offre Mystic",

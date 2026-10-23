@@ -37,6 +37,8 @@ class FakeMessages:
 
 def _response(stop_reason="end_turn", payload=READING):
     return SimpleNamespace(
+        model="claude-sonnet-5-5",
+        usage=SimpleNamespace(input_tokens=1200, output_tokens=900, cache_read_input_tokens=0),
         stop_reason=stop_reason,
         stop_details=SimpleNamespace(category="cyber") if stop_reason == "refusal" else None,
         content=[SimpleNamespace(type="thinking"), SimpleNamespace(type="text", text=json.dumps(payload))],
@@ -47,7 +49,8 @@ def _response(stop_reason="end_turn", payload=READING):
 def fake_ai(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr(settings, "AI_MODEL_NAME", "claude-opus-5-5")
+    monkeypatch.setattr(settings, "AI_MODEL_PAID", "claude-sonnet-5-5")
+    monkeypatch.setattr(settings, "AI_MODEL_FREE", "claude-haiku-5-5")
 
     def install(**kwargs):
         messages = FakeMessages(**kwargs)
@@ -63,7 +66,7 @@ def test_request_uses_persona_structure_and_fallbacks(fake_ai):
     ai_service.interpret_dream("I flew over a glass city", depth="deep", language="fr")
 
     call = messages.calls[0]
-    assert call["model"] == "claude-opus-5-5"
+    assert call["model"] == "claude-sonnet-5-5"
     assert call["output_config"]["format"]["schema"] == ai_service.READING_SCHEMA
     assert call["output_config"]["effort"] == get_settings().AI_EFFORT
     assert call["fallbacks"] == "default" and call["betas"] == ["server-side-fallback-2026-07-01"]
@@ -87,13 +90,24 @@ def test_reading_is_returned_as_sections(fake_ai):
     assert result.image_prompt == "a glass city at night seen from above"
 
 
-def test_models_without_fallback_support_skip_the_beta(fake_ai, monkeypatch):
-    monkeypatch.setattr(get_settings(), "AI_MODEL_NAME", "claude-sonnet-4-6")
+def test_models_without_fallback_support_skip_the_beta(fake_ai):
     messages = fake_ai(response=_response())
 
-    ai_service.interpret_dream("A dream")
+    ai_service.interpret_dream("A dream", model="claude-haiku-5-5")
 
     assert "fallbacks" not in messages.calls[0] and "betas" not in messages.calls[0]
+
+
+def test_free_readings_use_the_free_model(fake_ai, client):
+    messages = fake_ai(response=_response())
+    token = signup_and_login(client)
+
+    resp = client.post(
+        "/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert resp.status_code == 201
+    assert messages.calls[0]["model"] == "claude-haiku-5-5"
 
 
 @pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
@@ -101,6 +115,22 @@ def test_unfinished_readings_raise(fake_ai, stop_reason):
     fake_ai(response=_response(stop_reason=stop_reason))
     with pytest.raises(ai_service.ReadingUnavailable):
         ai_service.interpret_dream("A dream")
+
+
+def test_production_never_serves_the_sample_reading(monkeypatch):
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(get_settings(), "APP_ENV", "production")
+    with pytest.raises(ai_service.ReadingUnavailable):
+        ai_service.interpret_dream("A dream")
+
+
+def test_production_refuses_development_secrets(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(get_settings(), "APP_ENV", "production")
+    monkeypatch.setattr(get_settings(), "JWT_SECRET_KEY", "CHANGE_ME_IN_PRODUCTION")
+    with pytest.raises(RuntimeError):
+        main._check_production_config()
 
 
 def test_provider_outage_is_a_friendly_error_and_not_counted(fake_ai, client):

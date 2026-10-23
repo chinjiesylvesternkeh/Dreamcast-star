@@ -1,0 +1,19 @@
+# What `gcloud builds submit` must not upload (mirrors .dockerignore).
+# Never upload local secrets or the virtualenv.
+.gcloudignore
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.db
+*.log
+tests/

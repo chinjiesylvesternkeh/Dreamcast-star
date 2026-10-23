@@ -20,8 +20,21 @@ if settings.SENTRY_DSN:
     sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.APP_ENV, traces_sample_rate=0.2)
 
 
+def _check_production_config() -> None:
+    """Refuse to serve real users with development defaults."""
+    if settings.APP_ENV != "production":
+        return
+    if settings.JWT_SECRET_KEY == "CHANGE_ME_IN_PRODUCTION" or len(settings.JWT_SECRET_KEY) < 32:
+        raise RuntimeError("Set JWT_SECRET_KEY to a random secret of at least 32 characters in production")
+    if settings.DATABASE_URL.startswith("sqlite"):
+        raise RuntimeError("Production must use PostgreSQL, not SQLite")
+    if not settings.ANTHROPIC_API_KEY:
+        logger.error("ANTHROPIC_API_KEY is not set — dream readings will fail until it is configured")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_production_config()
     # In production, run migrations via Alembic (see backend/alembic/) as a
     # separate CI/CD step instead of create_all(). create_all() is fine for
     # local dev / first boot only.

@@ -40,7 +40,10 @@ class Settings(BaseSettings):
 
     # --- AI providers ---
     ANTHROPIC_API_KEY: str = ""
-    AI_MODEL_NAME: str = "claude-opus-5-5"
+    # Readings use a light model for the free plan and a richer one for paid
+    # plans, so every plan stays profitable at its daily limit (see app/plans.py).
+    AI_MODEL_FREE: str = "claude-haiku-5-5"
+    AI_MODEL_PAID: str = "claude-sonnet-5-5"
     AI_EFFORT: str = "medium"  # low | medium | high | xhigh | max — depth of the model's thinking
     IMAGE_PROVIDER_API_KEY: str = ""  # e.g. Stability AI / Google Imagen key
     IMAGE_PROVIDER_URL: str = (

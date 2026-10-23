@@ -188,8 +188,8 @@ countries.
 | Product ID | Name | Price | Benefits (max 4, shown by Play) | Description |
 |---|---|---|---|---|
 | `dreamcast_lucid_monthly` | DreamCast Lucid | US$1.79 / month | A reading every day · Dream Cards for every dream · Full dream archive | A dream reading every day. |
-| `dreamcast_mystic_monthly` | DreamCast Mystic | US$3.49 / month | Up to 5 readings a day · Every key symbol explained · A daily reflection | In-depth readings of every dream. |
-| `dreamcast_oracle_monthly` | DreamCast Oracle | US$8.79 / month | Up to 15 readings a day · Patterns across your dreams · A guiding question | The deepest readings, connected across your dreams. |
+| `dreamcast_mystic_monthly` | DreamCast Mystic | US$3.49 / month | Up to 2 readings a day · Every key symbol explained · A daily reflection | In-depth readings of every dream. |
+| `dreamcast_oracle_monthly` | DreamCast Oracle | US$8.79 / month | Up to 3 readings a day · Patterns across your dreams · A guiding question | The deepest readings, connected across your dreams. |
 
 Product IDs must match exactly — they are hard-wired in
 `backend/app/plans.py`.
@@ -200,8 +200,8 @@ language to its listing):
 | Product ID | Nom | Avantages (max 4) | Description |
 |---|---|---|---|
 | `dreamcast_lucid_monthly` | DreamCast Lucid | Une lecture chaque jour · Une carte de rêve pour chaque rêve · Toutes vos archives | Une lecture de rêve chaque jour. |
-| `dreamcast_mystic_monthly` | DreamCast Mystic | Jusqu'à 5 lectures par jour · Chaque symbole clé expliqué · Une réflexion quotidienne | Des lectures approfondies de chaque rêve. |
-| `dreamcast_oracle_monthly` | DreamCast Oracle | Jusqu'à 15 lectures par jour · Des liens entre vos rêves · Une question pour vous guider | Les lectures les plus approfondies, reliées entre vos rêves. |
+| `dreamcast_mystic_monthly` | DreamCast Mystic | Jusqu'à 2 lectures par jour · Chaque symbole clé expliqué · Une réflexion quotidienne | Des lectures approfondies de chaque rêve. |
+| `dreamcast_oracle_monthly` | DreamCast Oracle | Jusqu'à 3 lectures par jour · Des liens entre vos rêves · Une question pour vous guider | Les lectures les plus approfondies, reliées entre vos rêves. |
 
 ## 15. Monetization setup (needed for real purchases)
 
