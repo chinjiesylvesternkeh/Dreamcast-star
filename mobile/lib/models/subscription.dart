@@ -18,9 +18,8 @@ class SubscriptionStatus {
       status: json['status'] as String,
       provider: json['provider'] as String,
       plan: json['plan'] as String? ?? 'free',
-      currentPeriodEnd: json['current_period_end'] != null
-          ? DateTime.parse(json['current_period_end'] as String)
-          : null,
+      currentPeriodEnd:
+          json['current_period_end'] != null ? DateTime.parse(json['current_period_end'] as String) : null,
     );
   }
 }

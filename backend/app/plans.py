@@ -25,35 +25,60 @@ RENEWAL_GRACE = timedelta(hours=12)
 
 
 @dataclass(frozen=True)
-class Plan:
-    id: str
-    name: str
-    price_usd: str  # Play Console base price; display uses Play's localized price
+class PlanCopy:
+    """Customer-facing text for one plan in one language."""
+
     tagline: str
     features: tuple[str, ...]
+    highlight: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Plan:
+    id: str
+    name: str  # brand name — the same in every language
+    price_usd: str  # Play Console base price; display uses Play's localized price
+    copy: dict[str, PlanCopy]  # keyed by language code (see app/i18n.py)
     product_id: str = ""  # Google Play subscription product id
     daily_limit: Optional[int] = None
     weekly_limit: Optional[int] = None
     reading_depth: str = "standard"  # standard | deep | oracle
     pattern_insights: bool = False
-    highlight: Optional[str] = None
+    recommended: bool = False  # preselected on the paywall
 
     @property
     def is_paid(self) -> bool:
         return bool(self.product_id)
 
+    def copy_for(self, lang: str) -> PlanCopy:
+        return self.copy.get(lang) or self.copy["en"]
+
+
+_weekly = settings.FREE_TIER_WEEKLY_LIMIT
 
 FREE = Plan(
     id="free",
     name="Free",
     price_usd="0",
-    tagline="A first glimpse.",
-    weekly_limit=settings.FREE_TIER_WEEKLY_LIMIT,
-    features=(
-        f"{settings.FREE_TIER_WEEKLY_LIMIT} dream reading per week",
-        "Shareable Dream Cards",
-        "Your private dream archive",
-    ),
+    weekly_limit=_weekly,
+    copy={
+        "en": PlanCopy(
+            tagline="A first glimpse.",
+            features=(
+                f"{_weekly} dream reading{'' if _weekly == 1 else 's'} per week",
+                "Shareable Dream Cards",
+                "Your private dream archive",
+            ),
+        ),
+        "fr": PlanCopy(
+            tagline="Un premier aperçu.",
+            features=(
+                f"{_weekly} lecture{'' if _weekly == 1 else 's'} de rêve par semaine",
+                "Des cartes de rêve à partager",
+                "Vos archives de rêves privées",
+            ),
+        ),
+    },
 )
 
 LUCID = Plan(
@@ -61,13 +86,25 @@ LUCID = Plan(
     name="Lucid",
     price_usd="1.79",
     product_id="dreamcast_lucid_monthly",
-    tagline="For the curious dreamer.",
     daily_limit=1,
-    features=(
-        "A dream reading every day — up to 30 a month",
-        "Shareable Dream Cards for every dream",
-        "Your full private dream archive",
-    ),
+    copy={
+        "en": PlanCopy(
+            tagline="For the curious dreamer.",
+            features=(
+                "A dream reading every day — up to 30 a month",
+                "Shareable Dream Cards for every dream",
+                "Your full private dream archive",
+            ),
+        ),
+        "fr": PlanCopy(
+            tagline="Pour les esprits curieux.",
+            features=(
+                "Une lecture de rêve chaque jour — jusqu'à 30 par mois",
+                "Une carte de rêve à partager pour chaque rêve",
+                "Toutes vos archives de rêves privées",
+            ),
+        ),
+    },
 )
 
 MYSTIC = Plan(
@@ -75,16 +112,31 @@ MYSTIC = Plan(
     name="Mystic",
     price_usd="3.49",
     product_id="dreamcast_mystic_monthly",
-    tagline="Go beneath the surface.",
     daily_limit=5,
     reading_depth="deep",
-    highlight="Most popular",
-    features=(
-        "Up to 5 dream readings a day",
-        "In-depth readings: every key symbol explained",
-        "A practical reflection to carry into your day",
-        "Everything in Lucid",
-    ),
+    recommended=True,
+    copy={
+        "en": PlanCopy(
+            tagline="Go beneath the surface.",
+            highlight="Most popular",
+            features=(
+                "Up to 5 dream readings a day",
+                "In-depth readings: every key symbol explained",
+                "A practical reflection to carry into your day",
+                "Everything in Lucid",
+            ),
+        ),
+        "fr": PlanCopy(
+            tagline="Allez au-delà des apparences.",
+            highlight="Le plus populaire",
+            features=(
+                "Jusqu'à 5 lectures de rêve par jour",
+                "Des lectures approfondies : chaque symbole clé expliqué",
+                "Une réflexion concrète à garder en tête dans la journée",
+                "Tout ce qu'offre Lucid",
+            ),
+        ),
+    },
 )
 
 ORACLE = Plan(
@@ -92,17 +144,31 @@ ORACLE = Plan(
     name="Oracle",
     price_usd="8.79",
     product_id="dreamcast_oracle_monthly",
-    tagline="See the story your dreams are telling.",
     daily_limit=15,
     reading_depth="oracle",
     pattern_insights=True,
-    highlight="Deepest insight",
-    features=(
-        "Up to 15 dream readings a day",
-        "Pattern insights linking each dream to your recent ones",
-        "Oracle-depth readings that close with a guiding question",
-        "Everything in Mystic",
-    ),
+    copy={
+        "en": PlanCopy(
+            tagline="See the story your dreams are telling.",
+            highlight="Deepest insight",
+            features=(
+                "Up to 15 dream readings a day",
+                "Pattern insights linking each dream to your recent ones",
+                "Oracle-depth readings that close with a guiding question",
+                "Everything in Mystic",
+            ),
+        ),
+        "fr": PlanCopy(
+            tagline="Découvrez l'histoire que racontent vos rêves.",
+            highlight="Le plus approfondi",
+            features=(
+                "Jusqu'à 15 lectures de rêve par jour",
+                "Des liens entre chaque rêve et vos rêves récents",
+                "Des lectures Oracle qui se terminent par une question pour vous guider",
+                "Tout ce qu'offre Mystic",
+            ),
+        ),
+    },
 )
 
 PLANS: dict[str, Plan] = {plan.id: plan for plan in (FREE, LUCID, MYSTIC, ORACLE)}

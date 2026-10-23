@@ -1,0 +1,143 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "DreamCast",
+
+  "authEyebrowSignup": "THE NIGHT REMEMBERS",
+  "authEyebrowLogin": "WELCOME BACK",
+  "authTaglineSignup": "Every dream carries a message.\nLearn to hear yours.",
+  "authTaglineLogin": "Your dreams have been waiting for you.",
+  "authNameHint": "Name (optional)",
+  "authEmailHint": "Email",
+  "authPasswordHint": "Password (min. 8 characters)",
+  "authSignupButton": "Begin the journey",
+  "authLoginButton": "Return to the dream",
+  "authBusy": "Opening the door…",
+  "authSwitchToLogin": "Already have an account? Log in",
+  "authSwitchToSignup": "New here? Create an account",
+  "authErrorGeneric": "Something went wrong. Check your details and try again.",
+  "authErrorEmailTaken": "An account with this email already exists. Log in instead.",
+  "authErrorInvalidCredentials": "Incorrect email or password.",
+  "authErrorInvalidInput": "Enter a valid email and a password of at least 8 characters.",
+  "errorOffline": "Can't reach DreamCast. Check your connection and try again.",
+
+  "legalAgreePrefix": "By continuing you agree to our ",
+  "legalAgreeMiddle": " and ",
+  "legalAgreeSuffix": ".",
+  "termsOfService": "Terms of Service",
+  "privacyPolicy": "Privacy Policy",
+  "aiDisclaimer": "AI-generated for reflection and entertainment — not medical or psychological advice.",
+
+  "navDream": "Dream",
+  "navArchive": "Archive",
+  "plansPill": "PLANS",
+  "accountTooltip": "Account",
+
+  "recordEyebrow": "BEFORE IT FADES",
+  "recordTitle": "What did the night\nshow you?",
+  "recordSubtitle": "Dreams slip away within minutes of waking. Write or speak it now, while it still lingers.",
+  "recordHint": "I was flying over a city made of glass...",
+  "recordSubmit": "Reveal its meaning",
+  "recordBusy": "Reading the signs…",
+  "recordError": "The meaning stayed hidden this time. Please try again.",
+  "recordMicStart": "Speak your dream",
+  "recordMicStop": "Stop listening",
+  "recordMicUnavailable": "Voice input isn't available on this device.",
+
+  "historyEyebrow": "THE ARCHIVE",
+  "historyTitle": "Your dreams",
+  "historyCount": "{count, plural, =0{No dreams yet} =1{1 dream remembered} other{{count} dreams remembered}}",
+  "@historyCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "historyErrorTitle": "The archive is out of reach",
+  "historyErrorBody": "We couldn't load your dreams. Check your connection and try again.",
+  "historyEmptyTitle": "Nothing here yet",
+  "historyEmptyBody": "Your first dream will rest here once you've told it. Tap Dream to record last night's.",
+
+  "resultTitle": "YOUR DREAM, DECODED",
+  "resultMeaning": "WHAT IT MEANS",
+  "resultShare": "Share your Dream Card",
+  "resultShareText": "My dream, decoded by DreamCast ✨",
+
+  "reportTitle": "Report this reading",
+  "reportSubtitle": "Tell us what went wrong. Reports are reviewed by our team.",
+  "reportReasonOffensive": "Offensive or hateful",
+  "reportReasonHarmful": "Harmful or upsetting",
+  "reportReasonInaccurate": "Misleading",
+  "reportReasonImage": "Inappropriate image",
+  "reportReasonOther": "Something else",
+  "reportDetailsHint": "Add details (optional)",
+  "reportSend": "Send report",
+  "reportSending": "Sending…",
+  "reportThanks": "Thank you — we'll review this reading.",
+  "reportError": "Couldn't send your report. Please try again.",
+
+  "accountFreePlan": "Free plan",
+  "accountPlan": "{plan} plan",
+  "@accountPlan": {
+    "placeholders": { "plan": { "type": "String" } }
+  },
+  "manageSubscription": "Manage subscription",
+  "language": "Language",
+  "languageSystem": "Phone language",
+  "logOut": "Log out",
+  "deleteAccount": "Delete account",
+  "deleteTitle": "Delete your account?",
+  "deleteBody": "This permanently deletes your account, every dream and reading, and your Dream Cards. It cannot be undone.",
+  "deleteSubscriptionWarning": "Deleting your account does not cancel your Google Play subscription. Cancel it in Google Play › Subscriptions to stop future charges.",
+  "openGooglePlay": "Open Google Play",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "deleteDone": "Your account and data have been deleted.",
+  "deleteError": "Couldn't delete your account. Please try again.",
+
+  "close": "Close",
+  "paywallEyebrow": "DREAMCAST MEMBERSHIP",
+  "paywallTitle": "Choose how deep\nyou want to go.",
+  "paywallSubtitle": "Monthly plans, billed securely through Google Play. Change or cancel anytime.",
+  "paywallWelcome": "Welcome to {plan} ✨",
+  "@paywallWelcome": {
+    "placeholders": { "plan": { "type": "String" } }
+  },
+  "paywallNoSubscription": "No active DreamCast subscription was found on this Google account.",
+  "paywallOpenPlayError": "Couldn't open Google Play. Please try again.",
+  "paywallYourPlan": "Your plan",
+  "perMonth": "per month",
+  "paywallPlanSemantics": "{plan}, {price} per month",
+  "@paywallPlanSemantics": {
+    "placeholders": { "plan": { "type": "String" }, "price": { "type": "String" } }
+  },
+  "paywallCurrentPlan": "Your current plan",
+  "paywallContinue": "Continue with {plan}",
+  "@paywallContinue": {
+    "placeholders": { "plan": { "type": "String" } }
+  },
+  "paywallSubscribe": "Subscribe to {plan} · {price}/month",
+  "@paywallSubscribe": {
+    "placeholders": { "plan": { "type": "String" }, "price": { "type": "String" } }
+  },
+  "paywallSwitch": "Switch to {plan} · {price}/month",
+  "@paywallSwitch": {
+    "placeholders": { "plan": { "type": "String" }, "price": { "type": "String" } }
+  },
+  "paywallAndroidOnly": "Subscriptions are purchased through Google Play in the DreamCast Android app.",
+  "paywallBillingUnavailable": "Google Play Billing is unavailable on this device right now. Make sure the Play Store is installed and signed in.",
+  "paywallManageTerms": "Manage, change or cancel your subscription anytime in Google Play.",
+  "paywallTerms": "{price} per month, charged to your Google Play account. Renews automatically every month until you cancel. Cancel anytime in Google Play › Subscriptions — you keep access until the end of the period you have paid for.",
+  "@paywallTerms": {
+    "placeholders": { "price": { "type": "String" } }
+  },
+  "paywallUpgradeNote": "Your upgrade starts now and unused time on your current plan is credited.",
+  "paywallDowngradeNote": "Your new plan starts at your next renewal date.",
+  "paywallBusy": "Opening Google Play…",
+  "restorePurchases": "Restore purchases",
+  "plansLoadErrorTitle": "Plans couldn't load",
+  "checkConnection": "Check your connection and try again.",
+  "tryAgain": "Try again",
+
+  "billingPending": "Your payment is pending. Your plan starts as soon as Google Play confirms it.",
+  "billingFailed": "The purchase could not be completed.",
+  "billingUnverified": "We couldn't confirm this purchase yet. We'll retry automatically next time you open DreamCast.",
+  "billingError": "Google Play Billing ran into a problem. Please try again."
+}

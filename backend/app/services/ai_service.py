@@ -41,8 +41,10 @@ never alarming. Respond ONLY with valid JSON matching this schema:
 {{
   "interpretation": "{interpretation_spec}",
   "mood_tags": ["tag1", "tag2", "tag3"],
-  "card_headline": "a punchy, shareable one-line takeaway, max 12 words"
+  "card_headline": "a punchy, shareable one-line takeaway, max 12 words",
+  "image_prompt": "a short visual scene description in English for an illustration of the dream, max 25 words"
 }}
+{language_instruction}
 Separate paragraphs inside "interpretation" with a blank line (\\n\\n).
 No markdown, no extra commentary, JSON only."""
 
@@ -66,11 +68,50 @@ DEPTHS = {
 }
 
 
+# The reading follows the user's app language; image prompts stay in English
+# because image models follow English best.
+LANGUAGE_INSTRUCTIONS = {
+    "en": "Write the interpretation, mood tags and card headline in English.",
+    "fr": (
+        "Write the interpretation, mood tags and card headline in natural, warm French, "
+        "addressing the dreamer as « vous ». Keep image_prompt in English."
+    ),
+}
+
+
 @dataclass
 class DreamInterpretation:
     interpretation: str
     mood_tags: list[str]
     card_headline: str
+    image_prompt: str = ""
+
+
+# Local/dev stand-in so the app runs without a live key: (paragraphs, tags, headline).
+_STUB = {
+    "en": (
+        [
+            "This dream reflects a mind processing change and searching for steadiness. "
+            "The imagery suggests curiosity mixed with a little uncertainty about what comes next.",
+            "The setting stands for your inner landscape right now, and movement through it "
+            "hints that you are ready to explore it rather than avoid it.",
+            "What would change if you trusted the direction you are already moving in?",
+        ],
+        ["change", "curiosity", "uncertainty"],
+        "Your subconscious is preparing you for something new.",
+    ),
+    "fr": (
+        [
+            "Ce rêve reflète un esprit qui traverse un changement et cherche un point d'équilibre. "
+            "Ses images mêlent la curiosité à une légère incertitude quant à la suite.",
+            "Le décor représente votre paysage intérieur du moment, et le fait de le parcourir "
+            "montre que vous êtes prêt à l'explorer plutôt qu'à l'éviter.",
+            "Que changerait-il si vous faisiez confiance à la direction que vous prenez déjà ?",
+        ],
+        ["changement", "curiosité", "incertitude"],
+        "Votre inconscient vous prépare à quelque chose de nouveau.",
+    ),
+}
 
 
 def _recent_dreams_context(recent_dreams: Sequence) -> str:
@@ -88,28 +129,20 @@ def interpret_dream(
     raw_text: str,
     depth: str = "standard",
     recent_dreams: Optional[Sequence] = None,
+    language: str = "en",
 ) -> DreamInterpretation:
     interpretation_spec, max_tokens = DEPTHS.get(depth, DEPTHS["standard"])
+    language_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
 
     if not settings.ANTHROPIC_API_KEY:
-        # Safe local/dev fallback so the app is runnable without a live key.
         logger.warning("ANTHROPIC_API_KEY not set — returning stub interpretation")
-        paragraphs = [
-            "This dream reflects a mind processing change and searching for "
-            "steadiness. The imagery suggests curiosity mixed with a little "
-            "uncertainty about what comes next."
-        ]
-        if depth in ("deep", "oracle"):
-            paragraphs.append(
-                "The setting stands for your inner landscape right now, and movement "
-                "through it hints that you are ready to explore it rather than avoid it."
-            )
-        if depth == "oracle":
-            paragraphs.append("What would change if you trusted the direction you are already moving in?")
+        paragraphs, tags, headline = _STUB.get(language, _STUB["en"])
+        count = {"standard": 1, "deep": 2, "oracle": 3}.get(depth, 1)
         return DreamInterpretation(
-            interpretation="\n\n".join(paragraphs),
-            mood_tags=["change", "curiosity", "uncertainty"],
-            card_headline="Your subconscious is preparing you for something new.",
+            interpretation="\n\n".join(paragraphs[:count]),
+            mood_tags=list(tags),
+            card_headline=headline,
+            image_prompt="a dreamer drifting through a softly glowing night landscape",
         )
 
     content = f"Dream: {raw_text}"
@@ -123,7 +156,9 @@ def interpret_dream(
     response = client.messages.create(
         model=settings.AI_MODEL_NAME,
         max_tokens=max_tokens,
-        system=SYSTEM_PROMPT.format(interpretation_spec=interpretation_spec),
+        system=SYSTEM_PROMPT.format(
+            interpretation_spec=interpretation_spec, language_instruction=language_instruction
+        ),
         messages=[{"role": "user", "content": content}],
     )
     text_block = next((b.text for b in response.content if b.type == "text"), "{}")
@@ -134,6 +169,7 @@ def interpret_dream(
             interpretation=data["interpretation"],
             mood_tags=data.get("mood_tags", []),
             card_headline=data.get("card_headline", ""),
+            image_prompt=data.get("image_prompt", ""),
         )
     except (json.JSONDecodeError, KeyError) as exc:
         logger.error("Failed to parse AI response: %s | raw=%s", exc, text_block)

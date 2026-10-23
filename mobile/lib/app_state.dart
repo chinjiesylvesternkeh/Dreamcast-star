@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/subscription.dart';
 import 'services/api_client.dart';
@@ -14,8 +15,28 @@ class AppState extends ChangeNotifier {
   SubscriptionStatus? subscription;
   bool isLoading = true;
 
-  /// One-off billing messages (pending payment, errors) for the UI to show.
-  final ValueNotifier<String?> billingNotice = ValueNotifier(null);
+  /// One-off billing events (pending payment, errors) for the UI to show.
+  final ValueNotifier<BillingNotice?> billingNotice = ValueNotifier(null);
+
+  static const _localeKey = 'app_locale';
+
+  /// The language picked in the app, or null to follow the phone's language.
+  Locale? locale;
+
+  Future<void> setLocale(Locale? value) async {
+    locale = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (value == null) {
+        await prefs.remove(_localeKey);
+      } else {
+        await prefs.setString(_localeKey, value.languageCode);
+      }
+    } catch (_) {
+      // Preference storage is best-effort; the choice still applies this session.
+    }
+  }
 
   bool get isPro => subscription?.isPro ?? false;
 
@@ -26,19 +47,28 @@ class AppState extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
 
-    isLoggedIn = await api.isLoggedIn();
-    if (isLoggedIn) {
-      try {
-        subscription = await api.getSubscription();
-        _startBilling();
-      } catch (_) {
-        // Token might be stale/expired — treat as logged out.
-        isLoggedIn = false;
-      }
+    try {
+      final saved = (await SharedPreferences.getInstance()).getString(_localeKey);
+      locale = saved == null ? null : Locale(saved);
+    } catch (_) {
+      locale = null;
     }
 
-    isLoading = false;
-    notifyListeners();
+    try {
+      isLoggedIn = await api.isLoggedIn();
+      if (isLoggedIn) {
+        subscription = await api.getSubscription();
+        _startBilling();
+      }
+    } catch (_) {
+      // Stale session, unreachable server or unreadable storage: show sign-in
+      // rather than staying on the loading screen.
+      isLoggedIn = false;
+      subscription = null;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> refreshSubscription() async {
@@ -76,7 +106,7 @@ class AppState extends ChangeNotifier {
   void _startBilling() {
     billing.start(
       onEntitlementChanged: refreshSubscription,
-      onMessage: (message) => billingNotice.value = message,
+      onNotice: (notice) => billingNotice.value = notice,
     );
   }
 

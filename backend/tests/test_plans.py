@@ -1,6 +1,8 @@
 import base64
 import json
+import sys
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -218,3 +220,35 @@ def test_account_deletion_removes_all_data(client):
     assert db.query(models.Subscription).count() == 0
     db.close()
     assert client.get("/api/v1/users/me", headers=_auth(token)).status_code == 401
+
+
+def test_account_deletion_removes_stored_images(client, monkeypatch):
+    from app.routers import users
+
+    deleted = []
+    monkeypatch.setattr(users, "delete_dream_images", lambda urls: deleted.extend(urls))
+    token = signup_and_login(client)
+    client.post("/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers=_auth(token))
+
+    assert client.delete("/api/v1/users/me", headers=_auth(token)).status_code == 204
+    assert len(deleted) == 1
+
+
+def test_image_keys_are_extracted_from_urls(monkeypatch):
+    from app.services import image_service
+
+    calls = []
+
+    class FakeS3:
+        def delete_objects(self, Bucket, Delete):
+            calls.append([o["Key"] for o in Delete["Objects"]])
+
+    monkeypatch.setattr(get_settings(), "IMAGE_STORAGE_BUCKET", "bucket")
+    monkeypatch.setitem(sys.modules, "boto3", SimpleNamespace(client=lambda *args, **kwargs: FakeS3()))
+    key = "dream-cards/0b6f3a52-6f1e-4a7e-9a55-3d6f5c2b9e11.png"
+    image_service.delete_dream_images([
+        f"https://cdn.example.com/{key}",
+        f"https://bucket.s3.amazonaws.com/{key}?X-Amz-Signature=x",
+        image_service.PLACEHOLDER_IMAGE,
+    ])
+    assert calls == [[key]]

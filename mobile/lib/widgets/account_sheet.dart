@@ -4,10 +4,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../config.dart';
+import '../l10n/app_localizations.dart';
 import '../theme.dart';
 
-/// Account options: subscription management, legal links, sign out and
-/// in-app account deletion (required by Google Play for apps with sign-up).
+/// Account options: subscription management, language, legal links, sign out
+/// and in-app account deletion (required by Google Play for apps with sign-up).
 Future<void> showAccountSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -26,6 +27,8 @@ class _AccountSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final plan = appState.planId;
+    final l = AppLocalizations.of(context);
+    final language = Localizations.localeOf(context).languageCode;
 
     return SafeArea(
       child: Padding(
@@ -44,28 +47,36 @@ class _AccountSheet extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                plan == 'free' ? 'Free plan' : '${plan[0].toUpperCase()}${plan.substring(1)} plan',
+                plan == 'free'
+                    ? l.accountFreePlan
+                    : l.accountPlan('${plan[0].toUpperCase()}${plan.substring(1)}'),
                 style: AppTheme.display(size: 24),
               ),
             ),
             _Item(
               icon: Icons.credit_card_outlined,
-              label: 'Manage subscription',
+              label: l.manageSubscription,
               onTap: () => _open(AppConfig.manageSubscriptionUri()),
             ),
             _Item(
+              icon: Icons.translate,
+              label: l.language,
+              trailing: _languageName(appState.locale, l),
+              onTap: () => _pickLanguage(context, appState),
+            ),
+            _Item(
               icon: Icons.privacy_tip_outlined,
-              label: 'Privacy Policy',
-              onTap: () => _open(Uri.parse(AppConfig.privacyPolicyUrl)),
+              label: l.privacyPolicy,
+              onTap: () => _open(AppConfig.privacyPolicy(language)),
             ),
             _Item(
               icon: Icons.description_outlined,
-              label: 'Terms of Service',
-              onTap: () => _open(Uri.parse(AppConfig.termsUrl)),
+              label: l.termsOfService,
+              onTap: () => _open(AppConfig.terms(language)),
             ),
             _Item(
               icon: Icons.logout,
-              label: 'Log out',
+              label: l.logOut,
               onTap: () {
                 Navigator.of(context).pop();
                 appState.logout();
@@ -73,7 +84,7 @@ class _AccountSheet extends StatelessWidget {
             ),
             _Item(
               icon: Icons.delete_outline,
-              label: 'Delete account',
+              label: l.deleteAccount,
               color: const Color(0xFFFF8FA3),
               onTap: () => _confirmDelete(context, appState),
             ),
@@ -83,29 +94,65 @@ class _AccountSheet extends StatelessWidget {
     );
   }
 
+  /// Language names are shown in their own language, as is conventional.
+  static String _languageName(Locale? locale, AppLocalizations l) => switch (locale?.languageCode) {
+        'en' => 'English',
+        'fr' => 'Français',
+        _ => l.languageSystem,
+      };
+
+  Future<void> _pickLanguage(BuildContext context, AppState appState) async {
+    final l = AppLocalizations.of(context);
+    const options = <String?>[null, 'en', 'fr'];
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        backgroundColor: AppTheme.surface,
+        title: Text(l.language, style: AppTheme.display(size: 24)),
+        children: [
+          RadioGroup<String>(
+            groupValue: appState.locale?.languageCode ?? 'system',
+            onChanged: (value) => Navigator.of(dialogContext).pop(value),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final code in options)
+                  RadioListTile<String>(
+                    value: code ?? 'system',
+                    title: Text(_languageName(code == null ? null : Locale(code), l)),
+                    activeColor: AppTheme.accent,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await appState.setLocale(picked == 'system' ? null : Locale(picked));
+  }
+
   Future<void> _confirmDelete(BuildContext context, AppState appState) async {
+    final l = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppTheme.surface,
-        title: Text('Delete your account?', style: AppTheme.display(size: 24)),
+        title: Text(l.deleteTitle, style: AppTheme.display(size: 24)),
         content: Text(
-          'This permanently deletes your account, every dream and reading, and your Dream Cards. '
-          'It cannot be undone.'
-          '${appState.isPro ? '\n\nDeleting your account does not cancel your Google Play subscription. '
-              'Cancel it in Google Play › Subscriptions to stop future charges.' : ''}',
+          appState.isPro ? '${l.deleteBody}\n\n${l.deleteSubscriptionWarning}' : l.deleteBody,
           style: const TextStyle(color: AppTheme.textSecondary, height: 1.5),
         ),
         actions: [
           if (appState.isPro)
             TextButton(
               onPressed: () => _open(AppConfig.manageSubscriptionUri()),
-              child: const Text('Open Google Play'),
+              child: Text(l.openGooglePlay),
             ),
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(l.cancel)),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Delete', style: TextStyle(color: Color(0xFFFF8FA3))),
+            child: Text(l.delete, style: const TextStyle(color: Color(0xFFFF8FA3))),
           ),
         ],
       ),
@@ -116,10 +163,9 @@ class _AccountSheet extends StatelessWidget {
     Navigator.of(context).pop();
     try {
       await appState.deleteAccount();
-      messenger.showSnackBar(const SnackBar(content: Text('Your account and data have been deleted.')));
+      messenger.showSnackBar(SnackBar(content: Text(l.deleteDone)));
     } catch (_) {
-      messenger
-          .showSnackBar(const SnackBar(content: Text("Couldn't delete your account. Please try again.")));
+      messenger.showSnackBar(SnackBar(content: Text(l.deleteError)));
     }
   }
 }
@@ -129,15 +175,23 @@ class _Item extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final Color color;
+  final String? trailing;
 
-  const _Item(
-      {required this.icon, required this.label, required this.onTap, this.color = AppTheme.textPrimary});
+  const _Item({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = AppTheme.textPrimary,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: color == AppTheme.textPrimary ? AppTheme.textSecondary : color),
       title: Text(label, style: TextStyle(color: color)),
+      trailing:
+          trailing == null ? null : Text(trailing!, style: const TextStyle(color: AppTheme.textSecondary)),
       onTap: onTap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     );

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../config.dart';
+import '../l10n/app_localizations.dart';
 import '../models/plan.dart';
 import '../services/billing_service.dart';
 import '../theme.dart';
@@ -34,6 +35,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   late final AppState _appState = context.read<AppState>();
   late String _planOnOpen = _appState.planId;
   late Future<_Catalog> _futureCatalog;
+  String? _loadedLanguage;
   String? _selectedId;
   bool _isPurchasing = false;
 
@@ -41,7 +43,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
   void initState() {
     super.initState();
     _appState.addListener(_onAppStateChanged);
-    _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Plan copy comes from the backend in the active language; reload on change.
+    final language = Localizations.localeOf(context).languageCode;
+    if (language != _loadedLanguage) {
+      _loadedLanguage = language;
+      _load();
+    }
   }
 
   @override
@@ -66,7 +78,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
     if (!mounted || plan == 'free' || plan == _planOnOpen) return;
     _planOnOpen = plan;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Welcome to ${plan[0].toUpperCase()}${plan.substring(1)} ✨')),
+      SnackBar(
+        content:
+            Text(AppLocalizations.of(context).paywallWelcome('${plan[0].toUpperCase()}${plan.substring(1)}')),
+      ),
     );
     Navigator.of(context).maybePop();
   }
@@ -78,7 +93,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
     try {
       await _appState.billing.buy(product, plans: catalog.plans);
     } catch (_) {
-      _snack("Couldn't open Google Play. Please try again.");
+      if (mounted) _snack(AppLocalizations.of(context).paywallOpenPlayError);
     } finally {
       if (mounted) setState(() => _isPurchasing = false);
     }
@@ -88,7 +103,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
     await _appState.billing.restorePurchases();
     await _appState.refreshSubscription();
     if (mounted && _appState.planId == 'free') {
-      _snack('No active DreamCast subscription was found on this Google account.');
+      _snack(AppLocalizations.of(context).paywallNoSubscription);
     }
   }
 
@@ -100,6 +115,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   @override
   Widget build(BuildContext context) {
     final currentPlan = context.watch<AppState>().planId;
+    final l = AppLocalizations.of(context);
 
     return Scaffold(
       body: SafeArea(
@@ -121,7 +137,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       child: Align(
                         alignment: Alignment.topRight,
                         child: IconButton(
-                          tooltip: 'Close',
+                          tooltip: l.close,
                           onPressed: () => Navigator.of(context).pop(),
                           icon: const Icon(Icons.close, color: AppTheme.textSecondary),
                         ),
@@ -135,23 +151,23 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           children: [
                             const Reveal(child: Center(child: MoonGlyph(size: 76))),
                             const SizedBox(height: 8),
-                            const Reveal(delayMs: 80, child: Eyebrow('DREAMCAST MEMBERSHIP', center: true)),
+                            Reveal(delayMs: 80, child: Eyebrow(l.paywallEyebrow, center: true)),
                             const SizedBox(height: 12),
                             Reveal(
                               delayMs: 140,
                               child: Text(
-                                'Choose how deep\nyou want to go.',
+                                l.paywallTitle,
                                 textAlign: TextAlign.center,
                                 style: AppTheme.display(size: 32, weight: FontWeight.w600),
                               ),
                             ),
                             const SizedBox(height: 10),
-                            const Reveal(
+                            Reveal(
                               delayMs: 200,
                               child: Text(
-                                'Monthly plans, billed securely through Google Play. Change or cancel anytime.',
+                                l.paywallSubtitle,
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
+                                style: const TextStyle(color: AppTheme.textSecondary, height: 1.5),
                               ),
                             ),
                             const SizedBox(height: 24),
@@ -212,7 +228,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
     }
     final currentIndex = plans.indexWhere((p) => p.id == currentPlan);
     if (currentIndex >= 0) return plans[(currentIndex + 1).clamp(0, plans.length - 1)];
-    return plans.firstWhere((p) => p.highlight == 'Most popular', orElse: () => plans.first);
+    return plans.firstWhere((p) => p.recommended, orElse: () => plans.first);
   }
 }
 
@@ -234,12 +250,13 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(22);
-    final badge = isCurrent ? 'Your plan' : plan.highlight;
+    final l = AppLocalizations.of(context);
+    final badge = isCurrent ? l.paywallYourPlan : plan.highlight;
 
     return Semantics(
       selected: selected,
       button: true,
-      label: '${plan.name}, $price per month',
+      label: l.paywallPlanSemantics(plan.name, price),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         decoration: BoxDecoration(
@@ -312,8 +329,8 @@ class _PlanCard extends StatelessWidget {
                                 .copyWith(fontFeatures: const [FontFeature.liningFigures()]),
                           ),
                           const SizedBox(height: 4),
-                          const Text('per month',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                          Text(l.perMonth,
+                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
                         ],
                       ),
                     ],
@@ -445,33 +462,27 @@ class _CheckoutBar extends StatelessWidget {
     final isSwitch = currentIndex >= 0 && !isCurrent;
     final isUpgrade = isSwitch && plans.indexOf(plan) > currentIndex;
     final price = product?.price;
+    final l = AppLocalizations.of(context);
 
     final String label;
     if (isCurrent) {
-      label = 'Your current plan';
+      label = l.paywallCurrentPlan;
     } else if (price == null) {
-      label = 'Continue with ${plan.name}';
+      label = l.paywallContinue(plan.name);
     } else {
-      label = '${isSwitch ? 'Switch' : 'Subscribe'} to ${plan.name} · $price/month';
+      label = isSwitch ? l.paywallSwitch(plan.name, price) : l.paywallSubscribe(plan.name, price);
     }
 
     final String terms;
     if (!BillingService.isSupported) {
-      terms = 'Subscriptions are purchased through Google Play in the DreamCast Android app.';
+      terms = l.paywallAndroidOnly;
     } else if (!billingAvailable || price == null) {
-      terms =
-          'Google Play Billing is unavailable on this device right now. Make sure the Play Store is installed and signed in.';
+      terms = l.paywallBillingUnavailable;
     } else if (isCurrent) {
-      terms = 'Manage, change or cancel your subscription anytime in Google Play.';
+      terms = l.paywallManageTerms;
     } else {
-      final timing = !isSwitch
-          ? ''
-          : isUpgrade
-              ? ' Your upgrade starts now and unused time on your current plan is credited.'
-              : ' Your new plan starts at your next renewal date.';
-      terms = '$price per month, charged to your Google Play account. Renews automatically every month until '
-          'you cancel. Cancel anytime in Google Play › Subscriptions — you keep access until the end of the '
-          'period you have paid for.$timing';
+      final timing = !isSwitch ? '' : ' ${isUpgrade ? l.paywallUpgradeNote : l.paywallDowngradeNote}';
+      terms = '${l.paywallTerms(price)}$timing';
     }
 
     return Container(
@@ -485,7 +496,7 @@ class _CheckoutBar extends StatelessWidget {
         children: [
           GlowButton(
             label: label,
-            busyLabel: 'Opening Google Play…',
+            busyLabel: l.paywallBusy,
             busy: busy,
             onPressed: isCurrent || product == null ? null : onBuy,
           ),
@@ -504,12 +515,12 @@ class _CheckoutBar extends StatelessWidget {
                   AppConfig.manageSubscriptionUri(isCurrent ? plan.productId : null),
                   mode: LaunchMode.externalApplication,
                 ),
-                child: const Text('Manage subscription', style: TextStyle(fontSize: 12.5)),
+                child: Text(l.manageSubscription, style: const TextStyle(fontSize: 12.5)),
               ),
               const Text('·', style: TextStyle(color: AppTheme.textSecondary)),
               TextButton(
                 onPressed: BillingService.isSupported ? onRestore : null,
-                child: const Text('Restore purchases', style: TextStyle(fontSize: 12.5)),
+                child: Text(l.restorePurchases, style: const TextStyle(fontSize: 12.5)),
               ),
             ],
           ),
@@ -526,24 +537,26 @@ class _LegalLinks extends StatelessWidget {
   Widget build(BuildContext context) {
     const style =
         TextStyle(fontSize: 12, color: AppTheme.textSecondary, decoration: TextDecoration.underline);
+    final l = AppLocalizations.of(context);
+    final language = Localizations.localeOf(context).languageCode;
     return Column(
       children: [
-        const Text(
-          'Readings are AI-generated for reflection and entertainment, not medical or psychological advice.',
+        Text(
+          l.aiDisclaimer,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary, height: 1.45),
+          style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary, height: 1.45),
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          alignment: WrapAlignment.center,
           children: [
             TextButton(
-              onPressed: () => launchUrl(Uri.parse(AppConfig.termsUrl), mode: LaunchMode.externalApplication),
-              child: const Text('Terms of Service', style: style),
+              onPressed: () => launchUrl(AppConfig.terms(language), mode: LaunchMode.externalApplication),
+              child: Text(l.termsOfService, style: style),
             ),
             TextButton(
               onPressed: () =>
-                  launchUrl(Uri.parse(AppConfig.privacyPolicyUrl), mode: LaunchMode.externalApplication),
-              child: const Text('Privacy Policy', style: style),
+                  launchUrl(AppConfig.privacyPolicy(language), mode: LaunchMode.externalApplication),
+              child: Text(l.privacyPolicy, style: style),
             ),
           ],
         ),
@@ -562,15 +575,15 @@ class _LoadError extends StatelessWidget {
     return GlassPanel(
       child: Column(
         children: [
-          Text("Plans couldn't load", style: AppTheme.display(size: 22)),
+          Text(AppLocalizations.of(context).plansLoadErrorTitle, style: AppTheme.display(size: 22)),
           const SizedBox(height: 6),
-          const Text(
-            'Check your connection and try again.',
+          Text(
+            AppLocalizations.of(context).checkConnection,
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.textSecondary),
+            style: const TextStyle(color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 8),
-          TextButton(onPressed: onRetry, child: const Text('Try again')),
+          TextButton(onPressed: onRetry, child: Text(AppLocalizations.of(context).tryAgain)),
         ],
       ),
     );

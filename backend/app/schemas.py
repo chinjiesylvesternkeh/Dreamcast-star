@@ -87,6 +87,7 @@ class PlanOut(BaseModel):
     daily_limit: Optional[int]
     weekly_limit: Optional[int]
     highlight: Optional[str]
+    recommended: bool = False
 
 
 class GooglePlayPurchaseVerifyRequest(BaseModel):

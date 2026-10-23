@@ -134,9 +134,7 @@ class GlassPanel extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: shape,
-      child: blur
-          ? BackdropFilter(filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16), child: panel)
-          : panel,
+      child: blur ? BackdropFilter(filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16), child: panel) : panel,
     );
   }
 }

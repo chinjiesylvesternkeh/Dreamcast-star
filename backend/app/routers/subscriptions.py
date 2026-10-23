@@ -11,6 +11,7 @@ from app import models, schemas
 from app.config import get_settings
 from app.core.deps import get_current_user
 from app.database import get_db
+from app.i18n import get_language, t
 from app.plans import FREE, PAID_PLANS, plan_for, plan_for_product, refresh_if_lapsed
 from app.services.payment_service import (
     GooglePlayProvider,
@@ -97,20 +98,23 @@ def _find_subscription(db: Session, provider_name: str, event_object: dict):
 
 @router.get("/me", response_model=schemas.SubscriptionOut)
 def my_subscription(
-    db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+    lang: str = Depends(get_language),
 ):
     if not user.subscription:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No subscription record")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t("no_subscription", lang))
     refresh_if_lapsed(db, user.subscription)
     return _subscription_out(user.subscription)
 
 
 @router.get("/plans", response_model=list[schemas.PlanOut])
-def list_plans():
+def list_plans(lang: str = Depends(get_language)):
     """Paid plans in display order, with the Play product id that sells each.
 
-    The app shows Google Play's localized price for each product; price_usd
-    is only the Play Console base price, used as a fallback label.
+    Copy is returned in the request's language. The app shows Google Play's
+    localized price for each product; price_usd is only the Play Console
+    base price, used as a fallback label.
     """
     return [
         schemas.PlanOut(
@@ -118,11 +122,12 @@ def list_plans():
             name=plan.name,
             product_id=plan.product_id,
             price_usd=plan.price_usd,
-            tagline=plan.tagline,
-            features=list(plan.features),
+            tagline=plan.copy_for(lang).tagline,
+            features=list(plan.copy_for(lang).features),
             daily_limit=plan.daily_limit,
             weekly_limit=plan.weekly_limit,
-            highlight=plan.highlight,
+            highlight=plan.copy_for(lang).highlight,
+            recommended=plan.recommended,
         )
         for plan in PAID_PLANS
     ]
@@ -153,10 +158,11 @@ def verify_mobile_purchase(
     payload: schemas.GooglePlayPurchaseVerifyRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
+    lang: str = Depends(get_language),
 ):
     plan = plan_for_product(payload.product_id)
     if plan is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown subscription product")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, t("unknown_product", lang))
 
     # A purchase token belongs to one DreamCast account only.
     owner = (
@@ -170,7 +176,7 @@ def verify_mobile_purchase(
     if owner:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "This Google Play subscription is linked to another DreamCast account.",
+            t("token_linked_elsewhere", lang),
         )
 
     try:
@@ -178,11 +184,11 @@ def verify_mobile_purchase(
             payload.purchase_token, payload.product_id
         )
     except SubscriptionInactive:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This subscription has expired")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, t("subscription_expired", lang))
     except RuntimeError as exc:
         logger.error("Play verification unavailable: %s", exc)
         raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "Purchase verification is unavailable"
+            status.HTTP_503_SERVICE_UNAVAILABLE, t("verification_unavailable", lang)
         )
 
     sub = user.subscription

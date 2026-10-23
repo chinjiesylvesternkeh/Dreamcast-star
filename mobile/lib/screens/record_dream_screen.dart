@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../app_state.dart';
+import '../l10n/app_localizations.dart';
 import '../models/dream.dart';
 import '../theme.dart';
 import '../widgets/mystic.dart';
@@ -29,11 +31,23 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
       return;
     }
 
+    final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
+    final language = Localizations.localeOf(context).languageCode;
+
     final available = await _speech.initialize();
-    if (!available) return;
+    if (!available) {
+      messenger.showSnackBar(SnackBar(content: Text(l.recordMicUnavailable)));
+      return;
+    }
+
+    // Dictate in the app's language (e.g. fr_FR / fr_CM) when the device has it.
+    final locales = await _speech.locales();
+    final match = locales.where((locale) => locale.localeId.toLowerCase().startsWith(language));
 
     setState(() => _isListening = true);
     _speech.listen(
+      listenOptions: stt.SpeechListenOptions(localeId: match.isEmpty ? null : match.first.localeId),
       onResult: (result) {
         setState(() => _controller.text = result.recognizedWords);
       },
@@ -45,22 +59,28 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
 
     setState(() => _isSubmitting = true);
     final appState = context.read<AppState>();
+    final l = AppLocalizations.of(context);
 
     try {
       final Dream dream = await appState.api.submitDream(_controller.text.trim());
       if (!mounted) return;
       _controller.clear();
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => ResultScreen(dream: dream)));
-    } on Exception catch (e) {
+    } on DioException catch (e) {
       if (!mounted) return;
-      final msg = e.toString();
-      if (msg.contains('429')) {
+      final messenger = ScaffoldMessenger.of(context);
+      if (e.response?.statusCode == 429) {
+        // The backend explains the limit in the user's language.
+        final detail = e.response?.data is Map ? e.response?.data['detail'] : null;
+        if (detail is String) messenger.showSnackBar(SnackBar(content: Text(detail)));
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen()));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("The meaning stayed hidden this time. Please try again.")),
+        messenger.showSnackBar(
+          SnackBar(content: Text(e.response == null ? l.errorOffline : l.recordError)),
         );
       }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.recordError)));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -74,6 +94,7 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -84,18 +105,18 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Reveal(child: Eyebrow('BEFORE IT FADES')),
+                  Reveal(child: Eyebrow(l.recordEyebrow)),
                   const SizedBox(height: 14),
                   Reveal(
                     delayMs: 100,
-                    child: Text('What did the night\nshow you?', style: AppTheme.display(size: 38)),
+                    child: Text(l.recordTitle, style: AppTheme.display(size: 38)),
                   ),
                   const SizedBox(height: 10),
-                  const Reveal(
+                  Reveal(
                     delayMs: 200,
                     child: Text(
-                      'Dreams slip away within minutes of waking. Write or speak it now, while it still lingers.',
-                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 14, height: 1.5),
+                      l.recordSubtitle,
+                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14, height: 1.5),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -112,7 +133,7 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
                           textCapitalization: TextCapitalization.sentences,
                           style: AppTheme.display(size: 21, weight: FontWeight.w400, height: 1.5),
                           decoration: InputDecoration(
-                            hintText: 'I was flying over a city made of glass...',
+                            hintText: l.recordHint,
                             hintStyle: AppTheme.display(
                               size: 21,
                               weight: FontWeight.w400,
@@ -139,8 +160,8 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
                         const SizedBox(width: 14),
                         Expanded(
                           child: GlowButton(
-                            label: 'Reveal its meaning',
-                            busyLabel: 'Reading the signs…',
+                            label: l.recordSubmit,
+                            busyLabel: l.recordBusy,
                             busy: _isSubmitting,
                             onPressed: _submit,
                           ),
@@ -195,7 +216,9 @@ class _MicOrbState extends State<_MicOrb> with SingleTickerProviderStateMixin {
     const size = 56.0;
     return Semantics(
       button: true,
-      label: widget.listening ? 'Stop listening' : 'Speak your dream',
+      label: widget.listening
+          ? AppLocalizations.of(context).recordMicStop
+          : AppLocalizations.of(context).recordMicStart,
       child: GestureDetector(
         onTap: widget.onTap,
         child: SizedBox.square(

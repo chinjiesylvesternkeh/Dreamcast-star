@@ -9,6 +9,7 @@ when no key is configured, so the app remains runnable in dev.
 
 import base64
 import logging
+import re
 import uuid
 
 import httpx
@@ -84,3 +85,30 @@ def generate_dream_image(prompt_hint: str) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.error("Image generation failed, falling back to placeholder: %s", exc)
         return PLACEHOLDER_IMAGE
+
+
+_CARD_KEY = re.compile(r"dream-cards/[0-9a-f-]{36}\.png")
+
+
+def delete_dream_images(image_urls: list[str]) -> None:
+    """Removes stored Dream Card images (used when an account is deleted).
+
+    Works for both public and presigned URLs, since both contain the object
+    key. Placeholder images and URLs from elsewhere are ignored.
+    """
+    keys = sorted({m.group(0) for url in image_urls if url for m in [_CARD_KEY.search(url)] if m})
+    if not keys or not settings.IMAGE_STORAGE_BUCKET:
+        return
+
+    import boto3
+
+    client = boto3.client(
+        "s3",
+        region_name=settings.IMAGE_STORAGE_REGION or None,
+        endpoint_url=settings.IMAGE_STORAGE_ENDPOINT or None,
+    )
+    for start in range(0, len(keys), 1000):  # S3 batch delete limit
+        client.delete_objects(
+            Bucket=settings.IMAGE_STORAGE_BUCKET,
+            Delete={"Objects": [{"Key": key} for key in keys[start : start + 1000]], "Quiet": True},
+        )

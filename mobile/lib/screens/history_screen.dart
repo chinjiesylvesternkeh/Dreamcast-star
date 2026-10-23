@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
+import '../l10n/app_localizations.dart';
 import '../models/dream.dart';
 import '../theme.dart';
 import '../widgets/mystic.dart';
@@ -25,6 +27,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -37,10 +40,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   return const Center(child: MoonGlyph(size: 72));
                 }
                 if (snapshot.hasError) {
-                  return const _Quiet(
-                    title: 'The archive is out of reach',
-                    body: "We couldn't load your dreams. Check your connection and try again.",
-                  );
+                  return _Quiet(title: l.historyErrorTitle, body: l.historyErrorBody);
                 }
                 final dreams = snapshot.data ?? [];
                 return CustomScrollView(
@@ -51,17 +51,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Reveal(child: Eyebrow('THE ARCHIVE')),
+                            Reveal(child: Eyebrow(l.historyEyebrow)),
                             const SizedBox(height: 14),
                             Reveal(
                               delayMs: 100,
-                              child: Text('Your dreams', style: AppTheme.display(size: 38)),
+                              child: Text(l.historyTitle, style: AppTheme.display(size: 38)),
                             ),
                             const SizedBox(height: 6),
                             Reveal(
                               delayMs: 150,
                               child: Text(
-                                dreams.length == 1 ? '1 dream remembered' : '${dreams.length} dreams remembered',
+                                l.historyCount(dreams.length),
                                 style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
                               ),
                             ),
@@ -70,12 +70,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     ),
                     if (dreams.isEmpty)
-                      const SliverFillRemaining(
+                      SliverFillRemaining(
                         hasScrollBody: false,
-                        child: _Quiet(
-                          title: 'Nothing here yet',
-                          body: "Your first dream will rest here once you've told it. Tap Dream to record last night's.",
-                        ),
+                        child: _Quiet(title: l.historyEmptyTitle, body: l.historyEmptyBody),
                       )
                     else
                       SliverPadding(
@@ -101,8 +98,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
 }
 
 class _DreamTile extends StatelessWidget {
-  static const _months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
   final Dream dream;
 
   const _DreamTile({required this.dream});
@@ -110,11 +105,15 @@ class _DreamTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final date = dream.createdAt.toLocal();
+    // Short month in the active language, e.g. "OCT" (fr "oct." -> "OCT").
+    final month = DateFormat.MMM(Localizations.localeOf(context).toLanguageTag())
+        .format(date)
+        .replaceAll('.', '')
+        .toUpperCase();
     return GlassPanel(
       blur: false,
       padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
-      onTap: () =>
-          Navigator.of(context).push(MaterialPageRoute(builder: (_) => ResultScreen(dream: dream))),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ResultScreen(dream: dream))),
       child: Row(
         children: [
           SizedBox(
@@ -123,8 +122,9 @@ class _DreamTile extends StatelessWidget {
               children: [
                 Text('${date.day}', style: AppTheme.display(size: 28, color: AppTheme.accent, height: 1)),
                 const SizedBox(height: 4),
-                Text(_months[date.month - 1],
-                    style: AppTheme.eyebrow(color: AppTheme.textSecondary).copyWith(fontSize: 10, letterSpacing: 2)),
+                Text(month,
+                    style: AppTheme.eyebrow(color: AppTheme.textSecondary)
+                        .copyWith(fontSize: 10, letterSpacing: 2)),
               ],
             ),
           ),

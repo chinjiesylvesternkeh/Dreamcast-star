@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app_state.dart';
+import 'l10n/app_localizations.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 import 'services/api_client.dart';
@@ -20,14 +21,27 @@ class DreamCastApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => AppState(ApiClient())..bootstrap(),
-      child: MaterialApp(
-        title: 'DreamCast',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark,
-        darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.dark,
-        builder: (context, child) => NightSky(child: child ?? const SizedBox.shrink()),
-        home: const _RootRouter(),
+      child: Builder(
+        builder: (context) {
+          final appState = context.watch<AppState>();
+          return MaterialApp(
+            onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.dark,
+            darkTheme: AppTheme.dark,
+            themeMode: ThemeMode.dark,
+            // English and French; follows the phone unless the user picks one.
+            locale: appState.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            builder: (context, child) {
+              // Backend replies (plan copy, errors, AI readings) follow the active locale.
+              appState.api.languageCode = Localizations.localeOf(context).languageCode;
+              return NightSky(child: child ?? const SizedBox.shrink());
+            },
+            home: const _RootRouter(),
+          );
+        },
       ),
     );
   }

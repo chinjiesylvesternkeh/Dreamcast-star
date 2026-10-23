@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Required for API calls to the DreamCast backend -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -9,13 +10,17 @@
     <!-- Required for the voice dream-recording feature -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- DreamCast shows no ads; make sure no dependency adds the advertising ID. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+
     <!-- Required for push notification morning nudge -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="DreamCast"
         android:name="${applicationName}"
-        android:icon="@drawable/ic_launcher">
+        android:icon="@drawable/ic_launcher"
+        android:localeConfig="@xml/locales_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

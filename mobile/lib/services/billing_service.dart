@@ -8,6 +8,9 @@ import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import '../models/plan.dart';
 import 'api_client.dart';
 
+/// Billing events the UI turns into a localized message.
+enum BillingNotice { pending, failed, unverified, error }
+
 /// Google Play Billing for the Lucid / Mystic / Oracle subscriptions.
 ///
 /// PLAY CONSOLE SETUP (Monetize > Products > Subscriptions), one per plan:
@@ -45,7 +48,7 @@ class BillingService {
   /// finishes any purchase that was paid but never verified/acknowledged.
   void start({
     required VoidCallback onEntitlementChanged,
-    required void Function(String message) onMessage,
+    required void Function(BillingNotice notice) onNotice,
   }) {
     final iap = _iap;
     if (iap == null || _subscription != null) return;
@@ -54,22 +57,21 @@ class BillingService {
       for (final purchase in purchases) {
         switch (purchase.status) {
           case PurchaseStatus.pending:
-            onMessage('Your payment is pending. Your plan starts as soon as Google Play confirms it.');
+            onNotice(BillingNotice.pending);
           case PurchaseStatus.canceled:
             break;
           case PurchaseStatus.error:
-            onMessage(purchase.error?.message ?? 'The purchase could not be completed.');
+            onNotice(BillingNotice.failed);
           case PurchaseStatus.purchased:
           case PurchaseStatus.restored:
             if (await _verifyAndAcknowledge(purchase)) {
               onEntitlementChanged();
             } else {
-              onMessage(
-                  "We couldn't confirm this purchase yet. We'll retry automatically next time you open DreamCast.");
+              onNotice(BillingNotice.unverified);
             }
         }
       }
-    }, onError: (Object e) => onMessage('Google Play Billing error: $e'));
+    }, onError: (Object _) => onNotice(BillingNotice.error));
 
     unawaited(_syncOwned(onEntitlementChanged));
   }

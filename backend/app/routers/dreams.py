@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.core.deps import get_current_user
 from app.database import get_db
+from app.i18n import get_language, t
 from app.plans import Plan, plan_for, refresh_if_lapsed
 from app.services.ai_service import interpret_dream
 from app.services.image_service import generate_dream_image
@@ -14,7 +15,7 @@ from app.services.image_service import generate_dream_image
 router = APIRouter(prefix="/dreams", tags=["dreams"])
 
 
-def _check_rate_limit(db: Session, user: models.User) -> Plan:
+def _check_rate_limit(db: Session, user: models.User, lang: str) -> Plan:
     """Enforces the user's plan limits and returns the plan they're on."""
     refresh_if_lapsed(db, user.subscription)
     plan = plan_for(user.subscription)
@@ -35,9 +36,9 @@ def _check_rate_limit(db: Session, user: models.User) -> Plan:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                "You've used this week's free reading. Choose a plan for daily readings."
+                t("free_limit_reached", lang)
                 if not plan.is_paid
-                else f"You've used today's {limit} {plan.name} readings. Upgrade for more, or come back tomorrow."
+                else t("plan_limit_reached", lang, limit=limit, plan=plan.name)
             ),
         )
     return plan
@@ -58,15 +59,19 @@ def submit_dream(
     payload: schemas.DreamCreate,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
+    lang: str = Depends(get_language),
 ):
-    plan = _check_rate_limit(db, user)
+    plan = _check_rate_limit(db, user, lang)
 
     result = interpret_dream(
         payload.raw_text,
         depth=plan.reading_depth,
         recent_dreams=_recent_dreams(db, user) if plan.pattern_insights else None,
+        language=lang,
     )
-    image_url = generate_dream_image(prompt_hint=result.card_headline or payload.raw_text[:120])
+    image_url = generate_dream_image(
+        prompt_hint=result.image_prompt or result.card_headline or payload.raw_text[:120]
+    )
 
     dream = models.Dream(
         user_id=user.id,
@@ -104,6 +109,7 @@ def get_dream(
     dream_id: str,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
+    lang: str = Depends(get_language),
 ):
     dream = (
         db.query(models.Dream)
@@ -111,7 +117,7 @@ def get_dream(
         .first()
     )
     if not dream:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dream not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t("dream_not_found", lang))
     return dream
 
 
@@ -121,6 +127,7 @@ def report_dream(
     payload: schemas.DreamReportCreate,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
+    lang: str = Depends(get_language),
 ):
     """Flags an AI-generated reading or image for review."""
     dream = (
@@ -129,7 +136,7 @@ def report_dream(
         .first()
     )
     if not dream:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Dream not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t("dream_not_found", lang))
     db.add(models.DreamReport(dream_id=dream.id, reason=payload.reason, details=payload.details))
     db.commit()
     return {"reported": True}

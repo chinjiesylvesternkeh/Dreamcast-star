@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any # version pinned by flutter_localizations
   cupertino_icons: ^1.0.6
 
   # Networking
@@ -20,6 +23,9 @@ dependencies:
 
   # Secure local storage for tokens
   flutter_secure_storage: ^9.2.2
+
+  # Small preferences (chosen app language)
+  shared_preferences: ^2.3.2
 
   # Google Play Billing (in-app subscriptions)
   in_app_purchase: ^3.2.3
@@ -52,6 +58,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true # English / French strings from lib/l10n/*.arb
   assets:
     - assets/images/
     - assets/animations/

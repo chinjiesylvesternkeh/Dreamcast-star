@@ -10,15 +10,18 @@ from app.core.security import (
     verify_password,
 )
 from app.database import get_db
+from app.i18n import get_language, t
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
-def signup(payload: schemas.UserCreate, db: Session = Depends(get_db)):
+def signup(
+    payload: schemas.UserCreate, db: Session = Depends(get_db), lang: str = Depends(get_language)
+):
     existing = db.query(models.User).filter(models.User.email == payload.email).first()
     if existing:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email already registered")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, t("email_registered", lang))
 
     user = models.User(
         email=payload.email,
@@ -40,10 +43,12 @@ def signup(payload: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(payload: schemas.UserLogin, db: Session = Depends(get_db)):
+def login(
+    payload: schemas.UserLogin, db: Session = Depends(get_db), lang: str = Depends(get_language)
+):
     user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, t("invalid_credentials", lang))
 
     return schemas.TokenResponse(
         access_token=create_access_token(user.id),
@@ -52,14 +57,16 @@ def login(payload: schemas.UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=schemas.TokenResponse)
-def refresh(refresh_token: str, db: Session = Depends(get_db)):
+def refresh(
+    refresh_token: str, db: Session = Depends(get_db), lang: str = Depends(get_language)
+):
     payload = decode_token(refresh_token)
     if not payload or payload.get("type") != "refresh":
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, t("session_expired", lang))
 
     user = db.query(models.User).filter(models.User.id == payload["sub"]).first()
     if not user or not user.is_active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, t("session_expired", lang))
 
     return schemas.TokenResponse(
         access_token=create_access_token(user.id),

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/dream.dart';
@@ -17,56 +18,87 @@ class ApiClient {
 
   final Dio _dio;
 
+  /// Bare client for token refresh: it has no 401 handling of its own, so a
+  /// rejected refresh can never trigger another refresh.
+  final Dio _authDio;
+
+  Future<bool>? _refreshing;
+
+  /// Language the backend should answer in ("en" or "fr"): plan copy, error
+  /// messages and AI readings. Kept in sync with the app's active locale.
+  String languageCode = 'en';
+
+  static BaseOptions _options(String? baseUrl) => BaseOptions(
+        baseUrl: baseUrl ??
+            const String.fromEnvironment(
+              'API_BASE_URL',
+              defaultValue: 'http://10.0.2.2:8000/api/v1',
+            ),
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
+      );
+
   ApiClient({String? baseUrl})
-      : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl ??
-              const String.fromEnvironment(
-                'API_BASE_URL',
-                defaultValue: 'http://10.0.2.2:8000/api/v1',
-              ),
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 30),
-        )) {
+      : _dio = Dio(_options(baseUrl)),
+        _authDio = Dio(_options(baseUrl)) {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await _storage.read(key: _accessTokenKey);
+        final token = await _readToken(_accessTokenKey);
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
+        options.headers['Accept-Language'] = languageCode;
         handler.next(options);
       },
       onError: (error, handler) async {
-        if (error.response?.statusCode == 401) {
-          final refreshed = await _tryRefreshToken();
-          if (refreshed) {
-            final clone = await _retry(error.requestOptions);
-            return handler.resolve(clone);
-          }
+        final request = error.requestOptions;
+        final canRefresh = error.response?.statusCode == 401 &&
+            request.extra['retried'] != true &&
+            !request.path.startsWith('/auth/');
+        if (!canRefresh) return handler.next(error);
+
+        // One refresh at a time, and each request is retried at most once.
+        final refreshed = await (_refreshing ??= _tryRefreshToken().whenComplete(() => _refreshing = null));
+        if (!refreshed) {
+          await logout(); // the session is gone; start clean next time
+          return handler.next(error);
         }
-        handler.next(error);
+        try {
+          request.extra['retried'] = true;
+          return handler.resolve(await _dio.fetch(request));
+        } on DioException catch (retryError) {
+          return handler.next(retryError);
+        }
       },
     ));
   }
 
-  Future<Response<dynamic>> _retry(RequestOptions requestOptions) async {
-    final token = await _storage.read(key: _accessTokenKey);
-    final options = Options(method: requestOptions.method, headers: {
-      ...requestOptions.headers,
-      'Authorization': 'Bearer $token',
-    });
-    return _dio.request(requestOptions.path,
-        data: requestOptions.data, queryParameters: requestOptions.queryParameters, options: options);
+  /// Routes all requests through [adapter] (tests use a fake backend).
+  @visibleForTesting
+  void useAdapter(HttpClientAdapter adapter) {
+    _dio.httpClientAdapter = adapter;
+    _authDio.httpClientAdapter = adapter;
+  }
+
+  /// Reads a stored token; unreadable storage (e.g. cleared browser keys) counts as signed out.
+  Future<String?> _readToken(String key) async {
+    try {
+      return await _storage.read(key: key);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> _tryRefreshToken() async {
-    final refreshToken = await _storage.read(key: _refreshTokenKey);
+    final refreshToken = await _readToken(_refreshTokenKey);
     if (refreshToken == null) return false;
     try {
-      final resp = await _dio.post('/auth/refresh', queryParameters: {
-        'refresh_token': refreshToken,
-      });
-      await _storage.write(key: _accessTokenKey, value: resp.data['access_token']);
-      await _storage.write(key: _refreshTokenKey, value: resp.data['refresh_token']);
+      final resp = await _authDio.post(
+        '/auth/refresh',
+        queryParameters: {'refresh_token': refreshToken},
+        options: Options(headers: {'Accept-Language': languageCode}),
+      );
+      await _saveTokens(resp.data);
       return true;
     } catch (_) {
       return false;
@@ -94,12 +126,16 @@ class ApiClient {
   }
 
   Future<void> logout() async {
-    await _storage.delete(key: _accessTokenKey);
-    await _storage.delete(key: _refreshTokenKey);
+    try {
+      await _storage.delete(key: _accessTokenKey);
+      await _storage.delete(key: _refreshTokenKey);
+    } catch (_) {
+      // Nothing readable to delete.
+    }
   }
 
   Future<bool> isLoggedIn() async {
-    return (await _storage.read(key: _accessTokenKey)) != null;
+    return (await _readToken(_accessTokenKey)) != null;
   }
 
   // ---------- Dreams ----------

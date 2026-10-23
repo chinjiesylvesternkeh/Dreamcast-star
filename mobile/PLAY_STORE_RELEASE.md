@@ -1,56 +1,48 @@
-# Google Play release checklist
+# Google Play release
 
-The app is configured for an Android App Bundle with application ID
-`com.dreamcast.app`, target SDK 35, and Play Billing. It is not uploadable
-until the release signing and service configuration below are completed.
+Application ID `com.dreamcast.app` · target SDK 36 · Play Billing Library 9.1.
 
-## Required local setup
+Everything for Play Console lives in [`../play-store/`](../play-store/):
 
-1. Install Flutter and Android Studio with Android SDK Platform 35 and build
-   tools. Run `flutter doctor` until the Android toolchain is healthy.
-2. Create a dedicated upload key:
+- `PLAY_CONSOLE_DECLARATIONS.md` — App content answers (Data safety, content
+  rating, target audience, ads, app access), subscription products and
+  monetization setup
+- `STORE_LISTING.md` — name, descriptions, graphics, release notes
+- `CLOSED_TESTING.md` — the 12-tester / 14-day closed test and the production
+  access application
+- `testers.csv` — tester tracker
 
-   ```powershell
-   keytool -genkeypair -v -keystore C:\secure\dreamcast-upload-keystore.jks `
-     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-   ```
+## Signing
 
-3. Copy `android/key.properties.example` to `android/key.properties`, fill in
-   the credentials and keystore path, and keep both files private.
-4. Configure the production API endpoint and build:
+The upload key is at `%USERPROFILE%\.dreamcast-signing\dreamcast-upload.jks`
+and its passwords are in `android/key.properties` (git-ignored). **Back up
+both files somewhere safe and private** (password manager or encrypted
+drive). With Play App Signing, a lost upload key can be reset through Play
+support, but it takes days.
 
-   ```powershell
-   flutter pub get
-   flutter build appbundle --release `
-     --dart-define=API_BASE_URL=https://api.dreamcast.app/api/v1
-   ```
+## Build the release bundle
 
-   The bundle is written to `build/app/outputs/bundle/release/app-release.aab`.
+The API URL is compiled into the app, so build against the live backend
+(HTTPS):
 
-## Google Play Console
+```powershell
+cd mobile
+flutter build appbundle --release `
+  --dart-define=API_BASE_URL=https://<your-api-domain>/api/v1
+```
 
-1. Create the app with package name `com.dreamcast.app`.
-2. Create and activate the subscription product `dreamcast_pro_monthly`.
-3. Upload the first AAB to an internal testing track.
-4. Add license testers and test signup, dream submission, restore purchases,
-   cancelled subscriptions, and payment failures.
-5. Register the backend service account with Play Console subscription access,
-   then set `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` and
-   `GOOGLE_PLAY_PACKAGE_NAME=com.dreamcast.app` on the backend.
-6. Configure Real-time Developer Notifications and route them to the backend
-   Google Play webhook endpoint.
+Output: `build/app/outputs/bundle/release/app-release.aab`.
+
+Each upload needs a higher build number: bump `version` in `pubspec.yaml`
+(`1.0.0+1` → `1.0.1+2`).
+
+> This checkout lives under a path with a space (`CHINJIE Sylvester`), which
+> breaks Flutter's native-asset build step. Run Flutter through the 8.3 short
+> path, e.g. `cd C:\Users\CHINJI~1\Music\DREAM-STAR\dreamcast\mobile` and
+> `C:\Users\CHINJI~1\AppData\Local\flutter\bin\flutter.bat build appbundle ...`.
 
 ## Optional Firebase notifications
 
-Push notifications are not initialized by the current app, so Firebase is
-optional for the current release. If notifications are enabled later, create
-an Android Firebase app for `com.dreamcast.app`, place its
-`google-services.json` in `android/app/`, and initialize Firebase before using
-messaging. The Gradle plugin is applied automatically only when that file is
-present.
-
-## Store listing requirements
-
-Prepare the Play Console privacy policy URL, app icon, feature graphic,
-phone screenshots, content rating, Data safety answers, target audience,
-and account deletion flow before production submission.
+Firebase is bundled but not initialized, so it collects nothing. If you
+enable push notifications later, add `android/app/google-services.json`,
+initialize Firebase, and update the Data safety form (Device or other IDs).

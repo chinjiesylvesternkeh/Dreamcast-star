@@ -16,6 +16,20 @@ USD prices are the former XAF 1,000 / 2,000 / 5,000 converted at ~570 XAF
 per USD. Set them as the base price in Play Console and let Play convert to
 local currencies; the app always shows the localized price Play returns.
 
+### Languages (English / French)
+
+- **App:** strings live in `mobile/lib/l10n/app_en.arb` and `app_fr.arb`
+  (Flutter gen-l10n; `flutter test test/l10n_test.dart` fails if a French
+  string is missing). The app follows the phone's language, with an override
+  under Account › Language; Android 13+ also lists both in per-app language
+  settings.
+- **Backend:** the app sends `Accept-Language`; plan copy, error messages and
+  AI readings come back in that language (`backend/app/i18n.py`,
+  `PlanCopy` in `backend/app/plans.py`). Plan names stay untranslated.
+- **Legal pages:** English in `docs/`, French in `docs/fr/`; the app opens the
+  one matching the user's language.
+- **Play listing:** English and French copy in `play-store/STORE_LISTING.md`.
+
 ### Play Console setup
 
 1. **Monetize > Products > Subscriptions**: create the three products above,
@@ -51,12 +65,14 @@ Done in the app:
   reports land in the `dream_reports` table for review.
 - AI readings are labelled as reflection/entertainment, not medical advice.
 
-Still required in Play Console (cannot be done in code):
+Still required in Play Console (cannot be done in code) — copy-paste answers,
+store listing and the closed-test plan are in [`play-store/`](play-store/), and
+the public legal pages are in [`docs/`](docs/) (serve with GitHub Pages):
 
-- Host a **Privacy Policy** and **Terms of Service** and enter the privacy URL
-  in App content. The app links to `https://dreamcast.app/privacy` and
-  `/terms` by default — override with `--dart-define=PRIVACY_POLICY_URL=...`
-  and `--dart-define=TERMS_URL=...`.
+- Publish `docs/` (Privacy Policy, Terms, account deletion page) and enter the
+  privacy URL in App content. The app links to the GitHub Pages URLs by
+  default — override with `--dart-define=PRIVACY_POLICY_URL=...` and
+  `--dart-define=TERMS_URL=...`.
 - **Account deletion URL**: a web page where users can request deletion
   without the app (App content > Data deletion).
 - **Data safety** form: declare email (account), dream text and audio

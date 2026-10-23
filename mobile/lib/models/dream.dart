@@ -22,10 +22,7 @@ class Dream {
       id: json['id'] as String,
       rawText: json['raw_text'] as String,
       interpretation: json['interpretation'] as String?,
-      moodTags: (json['mood_tags'] as String? ?? '')
-          .split(',')
-          .where((t) => t.trim().isNotEmpty)
-          .toList(),
+      moodTags: (json['mood_tags'] as String? ?? '').split(',').where((t) => t.trim().isNotEmpty).toList(),
       imageUrl: json['image_url'] as String?,
       cardHeadline: json['card_headline'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),

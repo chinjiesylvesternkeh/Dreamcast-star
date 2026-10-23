@@ -7,6 +7,7 @@ class Plan {
   final String tagline;
   final List<String> features;
   final String? highlight;
+  final bool recommended; // preselected on the paywall
 
   Plan({
     required this.id,
@@ -16,6 +17,7 @@ class Plan {
     required this.tagline,
     required this.features,
     this.highlight,
+    this.recommended = false,
   });
 
   /// Shown only when Google Play can't supply the localized price.
@@ -30,6 +32,7 @@ class Plan {
       tagline: json['tagline'] as String? ?? '',
       features: (json['features'] as List<dynamic>? ?? []).cast<String>(),
       highlight: json['highlight'] as String?,
+      recommended: json['recommended'] as bool? ?? false,
     );
   }
 }

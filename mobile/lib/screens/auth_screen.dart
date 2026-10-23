@@ -1,9 +1,11 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../config.dart';
+import '../l10n/app_localizations.dart';
 import '../theme.dart';
 import '../widgets/mystic.dart';
 
@@ -29,6 +31,7 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     final appState = context.read<AppState>();
+    final l = AppLocalizations.of(context);
     try {
       if (_isSignup) {
         await appState.api.signup(
@@ -43,8 +46,16 @@ class _AuthScreenState extends State<AuthScreen> {
         );
       }
       appState.onAuthenticated();
-    } catch (e) {
-      setState(() => _error = 'Something went wrong. Check your details and try again.');
+    } on DioException catch (e) {
+      setState(() => _error = switch (e.response?.statusCode) {
+            null => l.errorOffline,
+            400 when _isSignup => l.authErrorEmailTaken,
+            401 => l.authErrorInvalidCredentials,
+            422 => l.authErrorInvalidInput,
+            _ => l.authErrorGeneric,
+          });
+    } catch (_) {
+      setState(() => _error = l.authErrorGeneric);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -60,6 +71,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -75,7 +87,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   Reveal(
                     delayMs: 150,
                     child: Text(
-                      'DreamCast',
+                      l.appTitle,
                       textAlign: TextAlign.center,
                       style: AppTheme.display(size: 48, weight: FontWeight.w600),
                     ),
@@ -83,7 +95,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   const SizedBox(height: 6),
                   Reveal(
                     delayMs: 250,
-                    child: Eyebrow(_isSignup ? 'THE NIGHT REMEMBERS' : 'WELCOME BACK, DREAMER', center: true),
+                    child: Eyebrow(_isSignup ? l.authEyebrowSignup : l.authEyebrowLogin, center: true),
                   ),
                   const SizedBox(height: 18),
                   Reveal(
@@ -91,9 +103,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 400),
                       child: Text(
-                        _isSignup
-                            ? 'Every dream carries a message.\nLearn to hear yours.'
-                            : 'Your dreams have been waiting for you.',
+                        _isSignup ? l.authTaglineSignup : l.authTaglineLogin,
                         key: ValueKey(_isSignup),
                         textAlign: TextAlign.center,
                         style: AppTheme.display(
@@ -121,9 +131,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                   child: TextField(
                                     controller: _nameController,
                                     textCapitalization: TextCapitalization.words,
-                                    decoration: const InputDecoration(
-                                      hintText: 'Name (optional)',
-                                      prefixIcon: Icon(Icons.person_outline, size: 20),
+                                    decoration: InputDecoration(
+                                      hintText: l.authNameHint,
+                                      prefixIcon: const Icon(Icons.person_outline, size: 20),
                                     ),
                                   ),
                                 )
@@ -132,9 +142,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         TextField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            hintText: 'Email',
-                            prefixIcon: Icon(Icons.mail_outline, size: 20),
+                          decoration: InputDecoration(
+                            hintText: l.authEmailHint,
+                            prefixIcon: const Icon(Icons.mail_outline, size: 20),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -142,9 +152,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           controller: _passwordController,
                           obscureText: true,
                           onSubmitted: (_) => _isSubmitting ? null : _submit(),
-                          decoration: const InputDecoration(
-                            hintText: 'Password (min. 8 characters)',
-                            prefixIcon: Icon(Icons.lock_outline, size: 20),
+                          decoration: InputDecoration(
+                            hintText: l.authPasswordHint,
+                            prefixIcon: const Icon(Icons.lock_outline, size: 20),
                           ),
                         ),
                       ],
@@ -162,8 +172,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   Reveal(
                     delayMs: 550,
                     child: GlowButton(
-                      label: _isSignup ? 'Begin the journey' : 'Return to the dream',
-                      busyLabel: 'Opening the door…',
+                      label: _isSignup ? l.authSignupButton : l.authLoginButton,
+                      busyLabel: l.authBusy,
                       busy: _isSubmitting,
                       onPressed: _submit,
                     ),
@@ -177,7 +187,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         _error = null;
                       }),
                       child: Text(
-                        _isSignup ? 'Already have an account? Log in' : 'New here? Create an account',
+                        _isSignup ? l.authSwitchToLogin : l.authSwitchToSignup,
                       ),
                     ),
                   ),
@@ -203,26 +213,26 @@ class _LegalNotice extends StatelessWidget {
       color: AppTheme.textSecondary,
       decoration: TextDecoration.underline,
     );
-    void open(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final l = AppLocalizations.of(context);
+    final language = Localizations.localeOf(context).languageCode;
+    final plain = TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8));
+    void open(Uri uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
 
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text(
-          'By continuing you agree to our ',
-          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8)),
-        ),
+        Text(l.legalAgreePrefix, style: plain),
         GestureDetector(
-          onTap: () => open(AppConfig.termsUrl),
-          child: const Text('Terms of Service', style: linkStyle),
+          onTap: () => open(AppConfig.terms(language)),
+          child: Text(l.termsOfService, style: linkStyle),
         ),
-        Text(' and ', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8))),
+        Text(l.legalAgreeMiddle, style: plain),
         GestureDetector(
-          onTap: () => open(AppConfig.privacyPolicyUrl),
-          child: const Text('Privacy Policy', style: linkStyle),
+          onTap: () => open(AppConfig.privacyPolicy(language)),
+          child: Text(l.privacyPolicy, style: linkStyle),
         ),
-        Text('.', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary.withValues(alpha: 0.8))),
+        Text(l.legalAgreeSuffix, style: plain),
       ],
     );
   }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
+import '../l10n/app_localizations.dart';
+import '../services/billing_service.dart';
 import '../theme.dart';
 import '../widgets/account_sheet.dart';
 import 'history_screen.dart';
@@ -34,8 +36,15 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _showBillingNotice() {
-    final message = _appState.billingNotice.value;
-    if (message == null || !mounted) return;
+    final notice = _appState.billingNotice.value;
+    if (notice == null || !mounted) return;
+    final l = AppLocalizations.of(context);
+    final message = switch (notice) {
+      BillingNotice.pending => l.billingPending,
+      BillingNotice.failed => l.billingFailed,
+      BillingNotice.unverified => l.billingUnverified,
+      BillingNotice.error => l.billingError,
+    };
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     _appState.billingNotice.value = null;
   }
@@ -43,6 +52,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final l = AppLocalizations.of(context);
 
     return Scaffold(
       body: Stack(
@@ -60,13 +70,13 @@ class _HomeShellState extends State<HomeShell> {
                 child: Row(
                   children: [
                     _ProPill(
-                      label: appState.isPro ? appState.planId.toUpperCase() : 'PLANS',
+                      label: appState.isPro ? appState.planId.toUpperCase() : l.plansPill,
                       onTap: () => Navigator.of(context)
                           .push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
                     ),
                     const SizedBox(width: 8),
                     IconButton(
-                      tooltip: 'Account',
+                      tooltip: l.accountTooltip,
                       onPressed: () => showAccountSheet(context),
                       icon: const Icon(Icons.person_outline, color: AppTheme.textSecondary),
                       style: IconButton.styleFrom(
@@ -88,16 +98,16 @@ class _HomeShellState extends State<HomeShell> {
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.nights_stay_outlined),
-              selectedIcon: Icon(Icons.nights_stay),
-              label: 'Dream',
+              icon: const Icon(Icons.nights_stay_outlined),
+              selectedIcon: const Icon(Icons.nights_stay),
+              label: l.navDream,
             ),
             NavigationDestination(
-              icon: Icon(Icons.auto_stories_outlined),
-              selectedIcon: Icon(Icons.auto_stories),
-              label: 'Archive',
+              icon: const Icon(Icons.auto_stories_outlined),
+              selectedIcon: const Icon(Icons.auto_stories),
+              label: l.navArchive,
             ),
           ],
         ),
