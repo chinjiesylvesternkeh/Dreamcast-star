@@ -69,15 +69,19 @@ class _RecordDreamScreenState extends State<RecordDreamScreen> {
     } on DioException catch (e) {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
-      if (e.response?.statusCode == 429) {
-        // The backend explains the limit in the user's language.
-        final detail = e.response?.data is Map ? e.response?.data['detail'] : null;
+      // The backend explains limits and unavailable readings in the user's language.
+      final detail = e.response?.data is Map ? e.response?.data['detail'] : null;
+      final status = e.response?.statusCode;
+      if (status == 429) {
         if (detail is String) messenger.showSnackBar(SnackBar(content: Text(detail)));
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen()));
       } else {
-        messenger.showSnackBar(
-          SnackBar(content: Text(e.response == null ? l.errorOffline : l.recordError)),
-        );
+        final message = switch (status) {
+          null => l.errorOffline,
+          503 when detail is String => detail,
+          _ => l.recordError,
+        };
+        messenger.showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.recordError)));

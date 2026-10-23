@@ -55,8 +55,8 @@ android {
         applicationId "com.dreamcast.app"
         minSdkVersion flutter.minSdkVersion   // Flutter default; above Play Billing's floor of 23
         targetSdkVersion 36       // Google Play requires API 36 for new apps/updates from 31 Aug 2026
-        versionCode flutterVersionCode.toInteger()
-        versionName flutterVersionName
+        versionCode flutter.versionCode
+        versionName flutter.versionName
     }
 
     signingConfigs {

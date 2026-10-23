@@ -2,7 +2,7 @@ import pytest
 
 from app.i18n import MESSAGES, language_from_header
 from app.plans import PLANS
-from app.services.ai_service import SYSTEM_PROMPT
+from app.services.ai_service import DEPTHS, SYSTEM_PROMPT
 
 from tests.test_auth_and_dreams import signup_and_login
 
@@ -34,9 +34,11 @@ def test_every_message_and_plan_has_french():
         assert plan.copy["fr"].features and len(plan.copy["fr"].features) == len(plan.copy["en"].features)
 
 
-def test_system_prompt_formats_with_language():
-    prompt = SYSTEM_PROMPT.format(interpretation_spec="x", language_instruction="Write in French.")
-    assert "Write in French." in prompt and "image_prompt" in prompt
+def test_reading_sections_exist_in_every_language():
+    for spec in DEPTHS.values():
+        for language in ("en", "fr"):
+            assert len(spec["headings"][language]) == len(spec["guide"])
+    assert "white witch" in SYSTEM_PROMPT
 
 
 def test_plans_are_served_in_french(client):
@@ -56,7 +58,9 @@ def test_reading_follows_request_language(client):
         headers={"Authorization": f"Bearer {token}", **FR},
     )
     assert resp.status_code == 201
-    assert resp.json()["card_headline"].startswith("Votre inconscient")
+    body = resp.json()
+    assert body["card_headline"].startswith("La nuit vous a ouvert une porte")
+    assert body["interpretation"].startswith("### La vision\nVous avez écrit : « Je volais")
 
 
 def test_errors_are_translated(client):

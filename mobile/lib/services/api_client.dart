@@ -140,7 +140,12 @@ class ApiClient {
 
   // ---------- Dreams ----------
   Future<Dream> submitDream(String rawText) async {
-    final resp = await _dio.post('/dreams', data: {'raw_text': rawText});
+    // A detailed reading takes the Oracle up to a minute or two to write.
+    final resp = await _dio.post(
+      '/dreams',
+      data: {'raw_text': rawText},
+      options: Options(receiveTimeout: const Duration(minutes: 3)),
+    );
     return Dream.fromJson(resp.data);
   }
 

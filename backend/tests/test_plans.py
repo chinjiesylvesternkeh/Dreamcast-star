@@ -177,7 +177,9 @@ def test_deeper_plans_get_longer_readings(client, play):
     _verify(client, token, product_id="dreamcast_oracle_monthly")
 
     resp = client.post("/api/v1/dreams", json={"raw_text": "A door in the sea"}, headers=_auth(token))
-    assert resp.json()["interpretation"].count("\n\n") == 2
+    reading = resp.json()["interpretation"]
+    assert reading.count("### ") == 6  # Oracle-depth: six sections
+    assert "### Threads Across Your Nights" in reading and "### The Question to Carry" in reading
 
 
 def test_user_can_report_a_reading(client):
@@ -249,6 +251,6 @@ def test_image_keys_are_extracted_from_urls(monkeypatch):
     image_service.delete_dream_images([
         f"https://cdn.example.com/{key}",
         f"https://bucket.s3.amazonaws.com/{key}?X-Amz-Signature=x",
-        image_service.PLACEHOLDER_IMAGE,
+        "https://example.com/some-other-image.png",
     ])
     assert calls == [[key]]

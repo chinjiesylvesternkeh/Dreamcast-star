@@ -91,13 +91,7 @@ class ResultScreen extends StatelessWidget {
                   const SizedBox(height: 28),
                   Reveal(delayMs: 300, child: Eyebrow(l.resultMeaning)),
                   const SizedBox(height: 12),
-                  Reveal(
-                    delayMs: 380,
-                    child: Text(
-                      dream.interpretation ?? '',
-                      style: AppTheme.display(size: 20, weight: FontWeight.w400, height: 1.55),
-                    ),
-                  ),
+                  Reveal(delayMs: 380, child: _Reading(dream.interpretation ?? '')),
                   const SizedBox(height: 16),
                   Reveal(
                     delayMs: 420,
@@ -121,6 +115,60 @@ class ResultScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Renders a reading. Sections arrive as "### Heading" followed by their body
+/// (see backend ai_service.format_sections); older readings are plain paragraphs.
+class _Reading extends StatelessWidget {
+  final String text;
+
+  const _Reading(this.text);
+
+  static List<(String?, String)> _sections(String text) {
+    final sections = <(String?, String)>[];
+    for (final block in text.split(RegExp(r'\n(?=### )'))) {
+      final trimmed = block.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed.startsWith('### ')) {
+        final newline = trimmed.indexOf('\n');
+        final heading = (newline < 0 ? trimmed : trimmed.substring(0, newline)).substring(4).trim();
+        final body = newline < 0 ? '' : trimmed.substring(newline + 1).trim();
+        sections.add((heading, body));
+      } else {
+        sections.add((null, trimmed));
+      }
+    }
+    return sections;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = AppTheme.display(size: 20, weight: FontWeight.w400, height: 1.6);
+    final sections = _sections(text);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (i, (heading, paragraphs)) in sections.indexed) ...[
+          if (i > 0) const SizedBox(height: 28),
+          if (heading != null) ...[
+            Row(
+              children: [
+                Text(heading.toUpperCase(),
+                    style: AppTheme.eyebrow().copyWith(fontSize: 11.5, letterSpacing: 2.6)),
+                const SizedBox(width: 12),
+                Expanded(child: Container(height: 0.8, color: AppTheme.hairline)),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          for (final (j, paragraph) in paragraphs.split(RegExp(r'\n\s*\n')).indexed) ...[
+            if (j > 0) const SizedBox(height: 14),
+            Text(paragraph.trim(), style: body),
+          ],
+        ],
+      ],
     );
   }
 }

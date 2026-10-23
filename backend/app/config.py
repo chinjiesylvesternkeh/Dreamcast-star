@@ -40,7 +40,8 @@ class Settings(BaseSettings):
 
     # --- AI providers ---
     ANTHROPIC_API_KEY: str = ""
-    AI_MODEL_NAME: str = "claude-sonnet-4-6"
+    AI_MODEL_NAME: str = "claude-opus-5-5"
+    AI_EFFORT: str = "medium"  # low | medium | high | xhigh | max — depth of the model's thinking
     IMAGE_PROVIDER_API_KEY: str = ""  # e.g. Stability AI / Google Imagen key
     IMAGE_PROVIDER_URL: str = (
         "https://api.stability.ai/v2beta/stable-image/generate/core"

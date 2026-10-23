@@ -9,7 +9,7 @@ from app.core.deps import get_current_user
 from app.database import get_db
 from app.i18n import get_language, t
 from app.plans import Plan, plan_for, refresh_if_lapsed
-from app.services.ai_service import interpret_dream
+from app.services.ai_service import ReadingUnavailable, interpret_dream
 from app.services.image_service import generate_dream_image
 
 router = APIRouter(prefix="/dreams", tags=["dreams"])
@@ -63,12 +63,16 @@ def submit_dream(
 ):
     plan = _check_rate_limit(db, user, lang)
 
-    result = interpret_dream(
-        payload.raw_text,
-        depth=plan.reading_depth,
-        recent_dreams=_recent_dreams(db, user) if plan.pattern_insights else None,
-        language=lang,
-    )
+    try:
+        result = interpret_dream(
+            payload.raw_text,
+            depth=plan.reading_depth,
+            recent_dreams=_recent_dreams(db, user) if plan.pattern_insights else None,
+            language=lang,
+        )
+    except ReadingUnavailable:
+        # Not counted against the plan's limit: no dream is saved.
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, t("reading_unavailable", lang))
     image_url = generate_dream_image(
         prompt_hint=result.image_prompt or result.card_headline or payload.raw_text[:120]
     )

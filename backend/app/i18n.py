@@ -83,6 +83,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Purchase verification is temporarily unavailable. Please try again shortly.",
         "fr": "La vérification de l'achat est momentanément indisponible. Veuillez réessayer dans quelques instants.",
     },
+    "reading_unavailable": {
+        "en": "The Oracle couldn't read this dream right now. Please try again, or describe it a little differently.",
+        "fr": "L'Oracle n'a pas pu lire ce rêve pour le moment. Réessayez, ou décrivez-le un peu autrement.",
+    },
     "delete_failed": {
         "en": "Couldn't delete your data right now. Please try again.",
         "fr": "Impossible de supprimer vos données pour le moment. Veuillez réessayer.",
