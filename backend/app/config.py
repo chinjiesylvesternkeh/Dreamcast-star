@@ -62,10 +62,18 @@ class Settings(BaseSettings):
     GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: str = ""  # path or raw JSON, mounted via secret
     REVENUECAT_API_KEY: str = ""
     REVENUECAT_WEBHOOK_SECRET: str = ""
+    # Flutterwave (XAF mobile money + cards) — powers the Lucid / Mystic /
+    # Oracle plans in app/plans.py, independent of PAYMENT_PROVIDER above.
+    FLW_SECRET_KEY: str = ""
+    FLW_WEBHOOK_SECRET: str = ""  # same value as Dashboard > Webhooks > Secret hash
+    FLW_REDIRECT_URL: str = ""  # defaults to this API's /subscriptions/flutterwave/return
+    # Optional payment-plan ids; when set, Flutterwave auto-renews monthly.
+    FLW_PLAN_ID_LUCID: str = ""
+    FLW_PLAN_ID_MYSTIC: str = ""
+    FLW_PLAN_ID_ORACLE: str = ""
 
-    # --- Free tier limits ---
+    # --- Free tier limit (paid plan limits live in app/plans.py) ---
     FREE_TIER_WEEKLY_LIMIT: int = 1
-    PRO_TIER_DAILY_LIMIT: int = 10
 
     # --- Observability ---
     SENTRY_DSN: str = ""

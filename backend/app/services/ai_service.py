@@ -2,7 +2,8 @@
 AI interpretation service.
 
 Wraps the Anthropic API to turn raw dream text into:
-  - a warm, non-clinical interpretation (2-4 sentences)
+  - a warm, non-clinical interpretation whose depth follows the user's plan
+    (standard / deep / oracle — see app/plans.py)
   - 3-5 short mood/theme tags
   - a punchy one-line "card headline" for the shareable Dream Card
 
@@ -12,6 +13,7 @@ swap in a different LLM provider later without touching callers.
 import json
 import logging
 from dataclasses import dataclass
+from typing import Optional, Sequence
 
 from anthropic import Anthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -34,14 +36,34 @@ def _get_client() -> Anthropic:
 SYSTEM_PROMPT = """You are DreamCast's dream interpreter. You write warm, insightful,
 non-clinical dream interpretations grounded in common dream-symbolism traditions
 (Jungian archetypes, everyday psychology) while being clear you are not offering
-medical or psychological diagnosis. Keep interpretations concise, emotionally
-resonant, and never alarming. Respond ONLY with valid JSON matching this schema:
-{
-  "interpretation": "2-4 sentence interpretation",
+medical or psychological diagnosis. Keep interpretations emotionally resonant and
+never alarming. Respond ONLY with valid JSON matching this schema:
+{{
+  "interpretation": "{interpretation_spec}",
   "mood_tags": ["tag1", "tag2", "tag3"],
   "card_headline": "a punchy, shareable one-line takeaway, max 12 words"
-}
+}}
+Separate paragraphs inside "interpretation" with a blank line (\\n\\n).
 No markdown, no extra commentary, JSON only."""
+
+# Reading depth per plan: (what to ask for, token budget).
+DEPTHS = {
+    "standard": ("a concise 2-4 sentence interpretation", 400),
+    "deep": (
+        "an in-depth interpretation in 3 short paragraphs: the dream's overall "
+        "meaning; the 2-3 most important symbols and what each suggests; and one "
+        "practical reflection for the dreamer's waking life",
+        900,
+    ),
+    "oracle": (
+        "an oracle-depth interpretation in 4 short paragraphs: the dream's overall "
+        "meaning; its key symbols; how it connects to the dreamer's recent dreams "
+        "(recurring symbols, emotions or progressions — say plainly if there is no "
+        "clear link); and close with one guiding question for the dreamer to "
+        "carry through the day",
+        1200,
+    ),
+}
 
 
 @dataclass
@@ -51,27 +73,58 @@ class DreamInterpretation:
     card_headline: str
 
 
+def _recent_dreams_context(recent_dreams: Sequence) -> str:
+    lines = []
+    for dream in recent_dreams:
+        date = dream.created_at.strftime("%Y-%m-%d") if dream.created_at else "earlier"
+        summary = dream.card_headline or (dream.raw_text or "")[:160]
+        tags = f" (themes: {dream.mood_tags})" if dream.mood_tags else ""
+        lines.append(f"- {date}: {summary}{tags}")
+    return "\n".join(lines) if lines else "- none yet"
+
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
-def interpret_dream(raw_text: str) -> DreamInterpretation:
+def interpret_dream(
+    raw_text: str,
+    depth: str = "standard",
+    recent_dreams: Optional[Sequence] = None,
+) -> DreamInterpretation:
+    interpretation_spec, max_tokens = DEPTHS.get(depth, DEPTHS["standard"])
+
     if not settings.ANTHROPIC_API_KEY:
         # Safe local/dev fallback so the app is runnable without a live key.
         logger.warning("ANTHROPIC_API_KEY not set — returning stub interpretation")
+        paragraphs = [
+            "This dream reflects a mind processing change and searching for "
+            "steadiness. The imagery suggests curiosity mixed with a little "
+            "uncertainty about what comes next."
+        ]
+        if depth in ("deep", "oracle"):
+            paragraphs.append(
+                "The setting stands for your inner landscape right now, and movement "
+                "through it hints that you are ready to explore it rather than avoid it."
+            )
+        if depth == "oracle":
+            paragraphs.append("What would change if you trusted the direction you are already moving in?")
         return DreamInterpretation(
-            interpretation=(
-                "This dream reflects a mind processing change and searching for "
-                "steadiness. The imagery suggests curiosity mixed with a little "
-                "uncertainty about what comes next."
-            ),
+            interpretation="\n\n".join(paragraphs),
             mood_tags=["change", "curiosity", "uncertainty"],
             card_headline="Your subconscious is preparing you for something new.",
+        )
+
+    content = f"Dream: {raw_text}"
+    if recent_dreams is not None:
+        content += (
+            "\n\nThe dreamer's recent dreams, newest first:\n"
+            + _recent_dreams_context(recent_dreams)
         )
 
     client = _get_client()
     response = client.messages.create(
         model=settings.AI_MODEL_NAME,
-        max_tokens=400,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Dream: {raw_text}"}],
+        max_tokens=max_tokens,
+        system=SYSTEM_PROMPT.format(interpretation_spec=interpretation_spec),
+        messages=[{"role": "user", "content": content}],
     )
     text_block = next((b.text for b in response.content if b.type == "text"), "{}")
 

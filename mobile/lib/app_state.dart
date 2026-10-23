@@ -14,6 +14,9 @@ class AppState extends ChangeNotifier {
 
   bool get isPro => subscription?.isPro ?? false;
 
+  /// Current plan id: free | lucid | mystic | oracle.
+  String get planId => isPro ? subscription!.plan : 'free';
+
   Future<void> bootstrap() async {
     isLoading = true;
     notifyListeners();

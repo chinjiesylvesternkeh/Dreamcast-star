@@ -30,20 +30,20 @@ class _HomeShellState extends State<HomeShell> {
             duration: const Duration(milliseconds: 450),
             child: KeyedSubtree(key: ValueKey(_index), child: _screens[_index]),
           ),
-          if (!appState.isPro)
-            Positioned(
-              top: 0,
-              right: 16,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _ProPill(
-                    onTap: () => Navigator.of(context)
-                        .push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
-                  ),
+          Positioned(
+            top: 0,
+            right: 16,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _ProPill(
+                  label: appState.isPro ? appState.planId.toUpperCase() : 'PLANS',
+                  onTap: () =>
+                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
                 ),
               ),
             ),
+          ),
         ],
       ),
       bottomNavigationBar: DecoratedBox(
@@ -72,9 +72,10 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class _ProPill extends StatelessWidget {
+  final String label;
   final VoidCallback onTap;
 
-  const _ProPill({required this.onTap});
+  const _ProPill({required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +98,7 @@ class _ProPill extends StatelessWidget {
             children: [
               const Icon(Icons.auto_awesome, size: 14, color: AppTheme.accent),
               const SizedBox(width: 6),
-              Text('PRO', style: AppTheme.eyebrow().copyWith(letterSpacing: 2.4)),
+              Text(label, style: AppTheme.eyebrow().copyWith(letterSpacing: 2.4)),
             ],
           ),
         ),

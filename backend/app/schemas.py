@@ -54,6 +54,7 @@ class DreamOut(BaseModel):
 class SubscriptionOut(BaseModel):
     status: str
     provider: str
+    plan: str = "free"
     current_period_end: Optional[datetime]
 
     class Config:
@@ -68,6 +69,24 @@ class CheckoutSessionRequest(BaseModel):
 class CheckoutSessionResponse(BaseModel):
     checkout_url: str
     provider: str
+
+
+class PlanOut(BaseModel):
+    id: str
+    name: str
+    price_xaf: int
+    currency: str = "XAF"
+    period: str = "month"
+    tagline: str
+    features: list[str]
+    daily_limit: Optional[int]
+    weekly_limit: Optional[int]
+    highlight: Optional[str]
+    auto_renews: bool
+
+
+class FlutterwaveCheckoutRequest(BaseModel):
+    plan: str
 
 
 class GooglePlayPurchaseVerifyRequest(BaseModel):

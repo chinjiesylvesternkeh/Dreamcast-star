@@ -1,3 +1,31 @@
+## DreamCast plans (XAF)
+
+The app sells three monthly plans, billed in XAF through Flutterwave
+(MTN MoMo, Orange Money, card). They are served and enforced by the
+FastAPI backend (`backend/app/plans.py` is the single source of truth):
+
+| Plan   | Price / month | Readings        | Depth                                          |
+|--------|---------------|-----------------|------------------------------------------------|
+| Free   | —             | 1 per week      | Standard                                       |
+| Lucid  | XAF 1,000     | 1 per day       | Standard                                       |
+| Mystic | XAF 2,000     | up to 5 per day | In-depth: key symbols + a practical reflection |
+| Oracle | XAF 5,000     | up to 15 per day | Oracle: patterns across recent dreams + a guiding question |
+
+To go live, set in the backend environment:
+
+- `FLW_SECRET_KEY` — Flutterwave secret key
+- `FLW_WEBHOOK_SECRET` — any random string; paste the same value in
+  Flutterwave Dashboard → Settings → Webhooks → Secret hash
+- Webhook URL: `https://<api-domain>/api/v1/subscriptions/webhook/flutterwave`
+- Optional `FLW_PLAN_ID_LUCID` / `FLW_PLAN_ID_MYSTIC` / `FLW_PLAN_ID_ORACLE`
+  — Flutterwave payment-plan ids. When set, plans renew automatically each
+  month; otherwise each payment buys 30 days with no automatic charge.
+
+Run `make migrate` after deploying (adds the `plan` column).
+
+The Node server documented below (`infra/server.js`) predates this and is
+no longer used by the app.
+
 # Payment Backend (Flutterwave — Mobile Money + Card Subscriptions)
 
 Minimal Node/Express backend that lets your Android app charge monthly

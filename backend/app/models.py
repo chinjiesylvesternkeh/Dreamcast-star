@@ -33,6 +33,7 @@ class SubscriptionProvider(str, enum.Enum):
     STRIPE = "stripe"
     GOOGLE_PLAY = "google_play"
     REVENUECAT = "revenuecat"
+    FLUTTERWAVE = "flutterwave"
     NONE = "none"
 
 
@@ -75,6 +76,7 @@ class Subscription(Base):
     user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), unique=True, nullable=False)
     status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.FREE, nullable=False)
     provider = Column(Enum(SubscriptionProvider), default=SubscriptionProvider.NONE)
+    plan = Column(String(20), default="free", server_default="free", nullable=False)  # see app/plans.py
     provider_customer_id = Column(String(255), nullable=True)  # Stripe customer id, etc.
     provider_subscription_id = Column(String(255), nullable=True)
     current_period_end = Column(DateTime(timezone=True), nullable=True)

@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/dream.dart';
+import '../models/plan.dart';
 import '../models/subscription.dart';
 
 /// Central API client for the DreamCast backend.
@@ -116,6 +117,19 @@ class ApiClient {
   Future<SubscriptionStatus> getSubscription() async {
     final resp = await _dio.get('/subscriptions/me');
     return SubscriptionStatus.fromJson(resp.data);
+  }
+
+  /// Paid plans in display order (Lucid, Mystic, Oracle), priced in XAF.
+  Future<List<Plan>> getPlans() async {
+    final resp = await _dio.get('/subscriptions/plans');
+    return (resp.data as List).map((p) => Plan.fromJson(p)).toList();
+  }
+
+  /// Starts a Flutterwave checkout (mobile money or card) and returns the
+  /// hosted payment page URL to open in the browser.
+  Future<String> startCheckout(String planId) async {
+    final resp = await _dio.post('/subscriptions/flutterwave/checkout', data: {'plan': planId});
+    return resp.data['checkout_url'] as String;
   }
 
   /// After a successful Google Play purchase, send the purchase token here
